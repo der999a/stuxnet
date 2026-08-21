@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Display
 import Postbox
 import SwiftSignalKit
@@ -8,6 +9,7 @@ import ItemListUI
 import AccountContext
 import GiftViewScreen
 import AlertUI
+import PresentationDataUtils
 
 private struct StuxnetLocalGiftsState: Equatable {
     var query: String = ""
@@ -117,15 +119,15 @@ private enum StuxnetLocalGiftsEntry: ItemListNodeEntry {
         let arguments = arguments as! StuxnetLocalGiftsArguments
         switch self {
         case let .search(value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Search", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "Title, model, slug, ID or owner", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateQuery)
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Search", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "Title, model, slug, ID or owner", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateQuery, action: {})
         case .importHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "ADD GIFT", sectionId: self.section)
         case let .slugInput(value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Unique slug", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "PlushPepe-12345", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateSlug)
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Unique slug", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "PlushPepe-12345", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateSlug, action: {})
         case let .importSlug(isLoading):
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: isLoading ? "Loading collectible…" : "Get collectible by slug", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: arguments.importSlug)
         case let .giftIdInput(value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Catalog ID", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "5170145012310081615", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateGiftId)
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Catalog ID", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "5170145012310081615", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateGiftId, action: {})
         case let .importGiftId(isLoading):
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: isLoading ? "Loading gift…" : "Add gift by ID", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: arguments.importGiftId)
         case let .refresh(isLoading):
@@ -521,7 +523,7 @@ public func stuxnetLocalGiftsController(context: AccountContext) -> ViewControll
     )
     |> deliverOnMainQueue
     |> map { presentationData, state, settings, catalog -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        catalogValue.swap(catalog)
+        _ = catalogValue.swap(catalog)
         var presentationData = presentationData
         presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
         let controllerState = ItemListControllerState(
@@ -655,7 +657,7 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
         case let .visible(value): return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Show in profile", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateVisible)
         case let .pinned(value): return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Pin as featured gift", value: value, sectionId: self.section, style: .blocks, updated: arguments.updatePinned)
         case let .equipped(value): return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Wear this gift", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateEquipped)
-        case let .number(value): return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Display number", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "Original", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateNumber)
+        case let .number(value): return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Display number", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "Original", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateNumber, action: {})
         case .variantsHeader: return ItemListSectionHeaderItem(presentationData: presentationData, text: "APPEARANCE VARIANTS", sectionId: self.section)
         case let .model(value, enabled): return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Model", enabled: enabled, label: enabled ? value : "No server variants", sectionId: self.section, style: .blocks, disclosureStyle: enabled ? .arrow : .none, action: enabled ? arguments.selectModel : nil)
         case let .pattern(value, enabled): return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Symbol", enabled: enabled, label: enabled ? value : "No server variants", sectionId: self.section, style: .blocks, disclosureStyle: enabled ? .arrow : .none, action: enabled ? arguments.selectPattern : nil)
@@ -663,7 +665,7 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
         case let .color(value, color):
             let title = NSMutableAttributedString(string: "●  ", attributes: [.font: Font.semibold(17.0), .foregroundColor: UIColor(rgb: color)])
             title.append(NSAttributedString(string: "Color", attributes: [.font: Font.regular(17.0), .foregroundColor: presentationData.theme.list.itemPrimaryTextColor]))
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: title, text: value, placeholder: "#8B5CF6", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateColor)
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: title, text: value, placeholder: "#8B5CF6", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateColor, action: {})
         case .resetVariants: return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: "Reset original appearance", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: arguments.resetVariants)
         case .ownershipHeader: return ItemListSectionHeaderItem(presentationData: presentationData, text: "OWNERSHIP", sectionId: self.section)
         case let .owner(value): return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Owner", label: value, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: arguments.selectOwner)
@@ -1123,11 +1125,11 @@ private func stuxnetLocalGiftEditorController(context: AccountContext, giftId: S
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get(), giftSignal)
     |> deliverOnMainQueue
     |> map { presentationData, state, gift -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        currentGift.swap(gift)
+        _ = currentGift.swap(gift)
         var presentationData = presentationData
         presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(gift?.title ?? "Gift"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
-        let entries = gift.map { stuxnetGiftEditorEntries(gift: $0, state: state) } ?? [.status("Gift was removed.")]
+        let entries: [StuxnetGiftEditorEntry] = gift.map { stuxnetGiftEditorEntries(gift: $0, state: state) } ?? [.status("Gift was removed.")]
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: true)
         return (controllerState, (listState, arguments))
     }
