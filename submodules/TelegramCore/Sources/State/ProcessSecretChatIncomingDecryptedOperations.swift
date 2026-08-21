@@ -295,10 +295,17 @@ func processSecretChatIncomingDecryptedOperations(encryptionProvider: Encryption
                                                 }
                                             }
                                         }
-                                        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: filteredMessageIds)
+                                        let stuxnetSettings = stuxnetSettings(transaction: transaction)
+                                        let idsToDelete = stuxnetMarkDeletedMessages(transaction: transaction, ids: filteredMessageIds, timestamp: Int32(Date().timeIntervalSince1970), settings: stuxnetSettings)
+                                        if !idsToDelete.isEmpty {
+                                            _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete)
+                                        }
                                     }
                                 case .clearHistory:
-                                    _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+                                    let stuxnetSettings = stuxnetSettings(transaction: transaction)
+                                    if !stuxnetMarkDeletedHistory(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .all, timestamp: Int32(Date().timeIntervalSince1970), settings: stuxnetSettings) {
+                                        _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+                                    }
                                 case let .markMessagesContentAsConsumed(globallyUniqueIds):
                                     var messageIds: [MessageId] = []
                                     for id in globallyUniqueIds {

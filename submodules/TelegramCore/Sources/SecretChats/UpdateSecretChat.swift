@@ -81,9 +81,13 @@ func updateSecretChat(encryptionProvider: EncryptionProvider, accountPeerId: Pee
                 
                 if isRemoved {
                     let peerId = currentPeer.id
-                    _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
-                    transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
-                    transaction.removeOrderedItemListItem(collectionId: Namespaces.OrderedItemList.RecentlySearchedPeerIds, itemId: RecentPeerItemId(peerId).rawValue)
+                    let stuxnetSettings = stuxnetSettings(transaction: transaction)
+                    let preserved = stuxnetMarkDeletedHistory(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .all, timestamp: Int32(Date().timeIntervalSince1970), settings: stuxnetSettings)
+                    if !preserved {
+                        _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+                        transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
+                        transaction.removeOrderedItemListItem(collectionId: Namespaces.OrderedItemList.RecentlySearchedPeerIds, itemId: RecentPeerItemId(peerId).rawValue)
+                    }
                 }
             } else {
                 Logger.shared.log("State", "got encryptedChatDiscarded, but peer doesn't exist")

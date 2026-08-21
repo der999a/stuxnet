@@ -82,6 +82,11 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
                     Logger.shared.log("Autoremove", "Performing autoremove for \(entry.messageId), isRemove: \(isRemove)")
 
                     if let message = transaction.getMessage(entry.messageId) {
+                        let stuxnetSettings = stuxnetSettings(transaction: transaction)
+                        if stuxnetShouldPreserveDeletedMessage(transaction: transaction, id: entry.messageId, settings: stuxnetSettings) {
+                            stuxnetMarkMessageDeleted(transaction: transaction, id: entry.messageId, timestamp: Int32(Date().timeIntervalSince1970))
+                            return
+                        }
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
                             _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                         } else {

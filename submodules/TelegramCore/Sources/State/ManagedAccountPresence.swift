@@ -42,6 +42,8 @@ private final class AccountPresenceManagerImpl {
                 } else {
                     self.stopOnlineUpdates()
                 }
+            } else if shouldKeepOnlinePresence && !sendOnlinePresence && sendOfflineAfterOnline {
+                self.updatePresence(false)
             }
         })
     }

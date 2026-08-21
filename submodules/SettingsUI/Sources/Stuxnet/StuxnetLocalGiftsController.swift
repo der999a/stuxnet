@@ -704,7 +704,11 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
             title.append(NSAttributedString(string: "Color", attributes: [.font: Font.regular(17.0), .foregroundColor: presentationData.theme.list.itemPrimaryTextColor]))
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: title, text: value, placeholder: "#8B5CF6", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateColor, action: {})
         case let .upgrade(enabled):
-            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: enabled ? "Upgrade and reveal appearance" : "Loading upgrade variants…", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: enabled ? arguments.upgradeLocally : nil)
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: enabled ? "Upgrade and reveal appearance" : "Loading upgrade variants…", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                if enabled {
+                    arguments.upgradeLocally()
+                }
+            })
         case .resetVariants: return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: "Reset original appearance", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: arguments.resetVariants)
         case .ownershipHeader: return ItemListSectionHeaderItem(presentationData: presentationData, text: "OWNERSHIP", sectionId: self.section)
         case let .owner(value): return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Owner", label: value, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: arguments.selectOwner)

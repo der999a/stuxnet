@@ -521,11 +521,19 @@ private func validateChannelMessagesBatch(postbox: Postbox, network: Network, ac
     return postbox.transaction { transaction -> Signal<Void, NoError> in
         var previousMessages: [Message] = []
         var previous: [MessageId: Message] = [:]
+        var validationMessageIds: [MessageId] = []
         for messageId in messageIds {
             if let message = transaction.getMessage(messageId) {
+                if message.stuxnetIsDeleted {
+                    continue
+                }
                 previousMessages.append(message)
                 previous[message.id] = message
+                validationMessageIds.append(messageId)
             }
+        }
+        guard !validationMessageIds.isEmpty else {
+            return .complete()
         }
         
         var signal: Signal<ValidatedMessages, MTRpcError>
@@ -600,11 +608,19 @@ private func validateReplyThreadMessagesBatch(postbox: Postbox, network: Network
     return postbox.transaction { transaction -> Signal<Void, NoError> in
         var previousMessages: [Message] = []
         var previous: [MessageId: Message] = [:]
+        var validationMessageIds: [MessageId] = []
         for messageId in messageIds {
             if let message = transaction.getMessage(messageId) {
+                if message.stuxnetIsDeleted {
+                    continue
+                }
                 previousMessages.append(message)
                 previous[message.id] = message
+                validationMessageIds.append(messageId)
             }
+        }
+        guard !validationMessageIds.isEmpty else {
+            return .complete()
         }
         
         var signal: Signal<ValidatedMessages, MTRpcError>
@@ -890,7 +906,8 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
                                             if currentMessage.localTags.contains(.OutgoingLiveLocation) {
                                                 updatedLocalTags.insert(.OutgoingLiveLocation)
                                             }
-                                            return .update(message.withUpdatedLocalTags(updatedLocalTags))
+                                            let updatedAttributes = stuxnetAttributesPreservingLocalData(previousMessage: currentMessage, updatedAttributes: message.attributes)
+                                            return .update(message.withUpdatedAttributes(updatedAttributes).withUpdatedLocalTags(updatedLocalTags))
                                         } else {
                                             var storeForwardInfo: StoreMessageForwardInfo?
                                             if let forwardInfo = currentMessage.forwardInfo {
@@ -984,8 +1001,14 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
                                         return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: updatedTags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
                                     })
                                 } else {
-                                    _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
-                                    Logger.shared.log("HistoryValidation", "deleting message \(id) in \(id.peerId)")
+                                    let settings = stuxnetSettings(transaction: transaction)
+                                    if stuxnetShouldPreserveDeletedMessage(transaction: transaction, id: id, settings: settings) {
+                                        stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: Int32(Date().timeIntervalSince1970))
+                                        Logger.shared.log("HistoryValidation", "preserving deleted message \(id) in \(id.peerId)")
+                                    } else {
+                                        _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
+                                        Logger.shared.log("HistoryValidation", "deleting message \(id) in \(id.peerId)")
+                                    }
                                 }
                             }
                         }
@@ -1134,7 +1157,8 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
                                         if currentMessage.localTags.contains(.OutgoingLiveLocation) {
                                             updatedLocalTags.insert(.OutgoingLiveLocation)
                                         }
-                                        return .update(message.withUpdatedLocalTags(updatedLocalTags))
+                                        let updatedAttributes = stuxnetAttributesPreservingLocalData(previousMessage: currentMessage, updatedAttributes: message.attributes)
+                                        return .update(message.withUpdatedAttributes(updatedAttributes).withUpdatedLocalTags(updatedLocalTags))
                                     } else {
                                         var storeForwardInfo: StoreMessageForwardInfo?
                                         if let forwardInfo = currentMessage.forwardInfo {
@@ -1167,8 +1191,14 @@ private func validateReplyThreadBatch(postbox: Postbox, network: Network, transa
                 
                     for id in removedMessageIds {
                         if !validMessageIds.contains(id) {
-                            _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
-                            Logger.shared.log("HistoryValidation", "deleting thread message \(id) in \(id.peerId)")
+                            let settings = stuxnetSettings(transaction: transaction)
+                            if stuxnetShouldPreserveDeletedMessage(transaction: transaction, id: id, settings: settings) {
+                                stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: Int32(Date().timeIntervalSince1970))
+                                Logger.shared.log("HistoryValidation", "preserving deleted thread message \(id) in \(id.peerId)")
+                            } else {
+                                _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [id])
+                                Logger.shared.log("HistoryValidation", "deleting thread message \(id) in \(id.peerId)")
+                            }
                         }
                     }
                 }

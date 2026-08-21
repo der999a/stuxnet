@@ -312,6 +312,7 @@ public struct StuxnetSettings: Codable, Equatable {
     public var markReadAfterAction: Bool
     public var useScheduledMessagesInGhostMode: Bool
     public var ghostSendDelaySeconds: Int32
+    public var sendWithoutSoundMode: Int32
     public var saveDeletedMessages: Bool
     public var saveMessageHistory: Bool
     public var saveForBots: Bool
@@ -358,9 +359,10 @@ public struct StuxnetSettings: Codable, Equatable {
         sendOnlinePresence: true,
         sendUploadProgress: true,
         sendOfflineAfterOnline: false,
-        markReadAfterAction: true,
+        markReadAfterAction: false,
         useScheduledMessagesInGhostMode: true,
         ghostSendDelaySeconds: 12,
+        sendWithoutSoundMode: 0,
         saveDeletedMessages: true,
         saveMessageHistory: true,
         saveForBots: false,
@@ -406,6 +408,24 @@ public struct StuxnetSettings: Codable, Equatable {
         return !self.sendReadMessages
             && !self.sendReadStories
             && !self.sendOnlinePresence
+            && !self.sendUploadProgress
+            && self.sendOfflineAfterOnline
+            && self.hideTypingActivity
+    }
+
+    public var ghostProtectionCount: Int {
+        var count = 0
+        if !self.sendReadMessages { count += 1 }
+        if !self.sendReadStories { count += 1 }
+        if !self.sendOnlinePresence { count += 1 }
+        if !self.sendUploadProgress { count += 1 }
+        if self.sendOfflineAfterOnline { count += 1 }
+        if self.hideTypingActivity { count += 1 }
+        return count
+    }
+
+    public var isGhostModeActive: Bool {
+        return self.ghostProtectionCount != 0
     }
 
     public init(
@@ -417,6 +437,7 @@ public struct StuxnetSettings: Codable, Equatable {
         markReadAfterAction: Bool,
         useScheduledMessagesInGhostMode: Bool,
         ghostSendDelaySeconds: Int32,
+        sendWithoutSoundMode: Int32,
         saveDeletedMessages: Bool,
         saveMessageHistory: Bool,
         saveForBots: Bool,
@@ -465,6 +486,7 @@ public struct StuxnetSettings: Codable, Equatable {
         self.markReadAfterAction = markReadAfterAction
         self.useScheduledMessagesInGhostMode = useScheduledMessagesInGhostMode
         self.ghostSendDelaySeconds = ghostSendDelaySeconds
+        self.sendWithoutSoundMode = sendWithoutSoundMode
         self.saveDeletedMessages = saveDeletedMessages
         self.saveMessageHistory = saveMessageHistory
         self.saveForBots = saveForBots
@@ -515,6 +537,7 @@ public struct StuxnetSettings: Codable, Equatable {
         case markReadAfterAction
         case useScheduledMessagesInGhostMode
         case ghostSendDelaySeconds
+        case sendWithoutSoundMode
         case saveDeletedMessages
         case saveMessageHistory
         case saveForBots
@@ -564,9 +587,11 @@ public struct StuxnetSettings: Codable, Equatable {
         self.sendOnlinePresence = try container.decodeIfPresent(Bool.self, forKey: .sendOnlinePresence) ?? defaults.sendOnlinePresence
         self.sendUploadProgress = try container.decodeIfPresent(Bool.self, forKey: .sendUploadProgress) ?? defaults.sendUploadProgress
         self.sendOfflineAfterOnline = try container.decodeIfPresent(Bool.self, forKey: .sendOfflineAfterOnline) ?? defaults.sendOfflineAfterOnline
-        self.markReadAfterAction = try container.decodeIfPresent(Bool.self, forKey: .markReadAfterAction) ?? defaults.markReadAfterAction
+        let decodedMarkReadAfterAction = try container.decodeIfPresent(Bool.self, forKey: .markReadAfterAction) ?? defaults.markReadAfterAction
         self.useScheduledMessagesInGhostMode = try container.decodeIfPresent(Bool.self, forKey: .useScheduledMessagesInGhostMode) ?? defaults.useScheduledMessagesInGhostMode
+        self.markReadAfterAction = self.useScheduledMessagesInGhostMode ? false : decodedMarkReadAfterAction
         self.ghostSendDelaySeconds = min(60, max(10, try container.decodeIfPresent(Int32.self, forKey: .ghostSendDelaySeconds) ?? defaults.ghostSendDelaySeconds))
+        self.sendWithoutSoundMode = min(2, max(0, try container.decodeIfPresent(Int32.self, forKey: .sendWithoutSoundMode) ?? defaults.sendWithoutSoundMode))
         self.saveDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: .saveDeletedMessages) ?? defaults.saveDeletedMessages
         self.saveMessageHistory = try container.decodeIfPresent(Bool.self, forKey: .saveMessageHistory) ?? defaults.saveMessageHistory
         self.saveForBots = try container.decodeIfPresent(Bool.self, forKey: .saveForBots) ?? defaults.saveForBots

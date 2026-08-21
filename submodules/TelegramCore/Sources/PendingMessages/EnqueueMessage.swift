@@ -569,8 +569,28 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
     return combineLatest(signals)
 }
 
-private func stuxnetMessageWithGhostSchedule(transaction: Transaction, account: Account, peerId: PeerId, message: EnqueueMessage, settings: StuxnetSettings) -> EnqueueMessage {
-    guard settings.useScheduledMessagesInGhostMode, settings.isGhostModeEnabled else {
+private func stuxnetMessageWithGhostOptions(transaction: Transaction, account: Account, peerId: PeerId, message: EnqueueMessage, settings: StuxnetSettings) -> EnqueueMessage {
+    var message = message
+
+    let shouldSendWithoutSound = settings.sendWithoutSoundMode == 2
+        || (settings.sendWithoutSoundMode == 1 && settings.isGhostModeActive)
+    if shouldSendWithoutSound {
+        message = message.withUpdatedAttributes { attributes in
+            if attributes.contains(where: { attribute in
+                guard let notificationInfo = attribute as? NotificationInfoMessageAttribute else {
+                    return false
+                }
+                return notificationInfo.flags.contains(.muted)
+            }) {
+                return attributes
+            }
+            var attributes = attributes
+            attributes.append(NotificationInfoMessageAttribute(flags: .muted))
+            return attributes
+        }
+    }
+
+    guard settings.useScheduledMessagesInGhostMode, settings.isGhostModeActive else {
         return message
     }
     guard peerId != account.peerId else {
@@ -632,7 +652,7 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
         return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
             let settings = stuxnetSettings(transaction: transaction)
             let effectiveMessages = messages.map { transformedMedia, message in
-                return (transformedMedia, stuxnetMessageWithGhostSchedule(transaction: transaction, account: account, peerId: peerId, message: message, settings: settings))
+                return (transformedMedia, stuxnetMessageWithGhostOptions(transaction: transaction, account: account, peerId: peerId, message: message, settings: settings))
             }
             var resultIds = Array<MessageId?>(repeating: nil, count: effectiveMessages.count)
             var ephemeralMessageIds: [MessageId] = []

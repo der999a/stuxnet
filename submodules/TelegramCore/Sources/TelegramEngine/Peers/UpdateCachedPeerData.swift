@@ -960,12 +960,15 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
                                             })
                                         
                                             if let minAvailableMessageId = minAvailableMessageId, minAvailableMessageIdUpdated {
-                                                var resourceIds: [MediaResourceId] = []
-                                                transaction.deleteMessagesInRange(peerId: peerId, namespace: minAvailableMessageId.namespace, minId: 1, maxId: minAvailableMessageId.id, forEachMedia: { media in
-                                                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-                                                })
-                                                if !resourceIds.isEmpty {
-                                                    let _ = postbox.mediaBox.removeCachedResources(Array(Set(resourceIds))).start()
+                                                let stuxnetSettings = stuxnetSettings(transaction: transaction)
+                                                if !stuxnetMarkDeletedMessagesInIdRange(transaction: transaction, peerId: peerId, namespace: minAvailableMessageId.namespace, minId: 1, maxId: minAvailableMessageId.id, timestamp: Int32(Date().timeIntervalSince1970), settings: stuxnetSettings) {
+                                                    var resourceIds: [MediaResourceId] = []
+                                                    transaction.deleteMessagesInRange(peerId: peerId, namespace: minAvailableMessageId.namespace, minId: 1, maxId: minAvailableMessageId.id, forEachMedia: { media in
+                                                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                                                    })
+                                                    if !resourceIds.isEmpty {
+                                                        let _ = postbox.mediaBox.removeCachedResources(Array(Set(resourceIds))).start()
+                                                    }
                                                 }
                                             }
                                         case let .communityFull(communityFullData):

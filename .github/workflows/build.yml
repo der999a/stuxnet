@@ -103,6 +103,7 @@ jobs:
           required_sources = [
               Path("submodules/AccountContext/Sources/VoiceLabProcessor.swift"),
               Path("submodules/TelegramCore/Sources/Settings/StuxnetSettings.swift"),
+              Path("submodules/SettingsUI/Sources/Stuxnet/StuxnetGhostModeController.swift"),
               Path("submodules/SettingsUI/Sources/Stuxnet/StuxnetSettingsController.swift"),
           ]
           missing_sources = [str(path) for path in required_sources if not path.is_file()]
@@ -118,7 +119,36 @@ jobs:
                   missing_assets.append(filename)
           if missing_assets:
               raise SystemExit("Missing app icon assets: " + ", ".join(sorted(set(missing_assets))))
+
+          for source in Path("submodules/SettingsUI/Sources/Stuxnet").glob("*.swift"):
+              for line_number, line in enumerate(source.read_text().splitlines(), 1):
+                  if "ItemListActionItem(" in line and "action:" in line and ": nil" in line:
+                      raise SystemExit(f"Invalid optional ItemListActionItem action at {source}:{line_number}")
           PY
+
+      - name: Parse Stuxnet Swift sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r source; do
+            echo "Parsing $source"
+            xcrun swiftc -frontend -parse "$source"
+          done < <(
+            find submodules/SettingsUI/Sources/Stuxnet -type f -name '*.swift' -print
+            printf '%s\n' \
+              submodules/AccountContext/Sources/VoiceLabProcessor.swift \
+              submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift \
+              submodules/TelegramCore/Sources/Settings/StuxnetSettings.swift \
+              submodules/TelegramCore/Sources/SecretChats/UpdateSecretChat.swift \
+              submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift \
+              submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift \
+              submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift \
+              submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift \
+              submodules/TelegramCore/Sources/State/ProcessSecretChatIncomingDecryptedOperations.swift \
+              submodules/TelegramCore/Sources/SyncCore/StuxnetMessageAttributes.swift \
+              submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift \
+              submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+          )
 
       - name: Compile and run Voice Lab smoke test
         shell: bash

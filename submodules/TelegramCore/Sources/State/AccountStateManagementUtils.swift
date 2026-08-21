@@ -4256,6 +4256,14 @@ func replayFinalState(
                         }
                     }
                 }
+
+                for i in 0 ..< messages.count {
+                    guard case let .Id(id) = messages[i].id, let previousMessage = transaction.getMessage(id) else {
+                        continue
+                    }
+                    let updatedAttributes = stuxnetAttributesPreservingLocalData(previousMessage: previousMessage, updatedAttributes: messages[i].attributes)
+                    messages[i] = messages[i].withUpdatedAttributes(updatedAttributes)
+                }
             
                 let _ = transaction.addMessages(messages, location: location)
                 if case .UpperHistoryBlock = location {
@@ -4448,8 +4456,7 @@ func replayFinalState(
                         guard let id = transaction.messageIdsForGlobalIds([globalId]).first else {
                             continue
                         }
-                        let isBotChat = (transaction.getPeer(id.peerId) as? TelegramUser)?.botInfo != nil
-                        if settings.saveForBots || !isBotChat {
+                        if stuxnetShouldPreserveDeletedMessage(transaction: transaction, id: id, settings: settings) {
                             preservedGlobalIds.insert(globalId)
                             stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: timestamp)
                         }
@@ -4479,15 +4486,7 @@ func replayFinalState(
                 let settings = stuxnetSettings(transaction: transaction)
                 if settings.saveDeletedMessages {
                     let timestamp = Int32(Date().timeIntervalSince1970)
-                    var idsToDelete: [MessageId] = []
-                    for id in ids {
-                        let isBotChat = (transaction.getPeer(id.peerId) as? TelegramUser)?.botInfo != nil
-                        if settings.saveForBots || !isBotChat {
-                            stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: timestamp)
-                        } else {
-                            idsToDelete.append(id)
-                        }
-                    }
+                    let idsToDelete = stuxnetMarkDeletedMessages(transaction: transaction, ids: ids, timestamp: timestamp, settings: settings)
                     if !idsToDelete.isEmpty {
                         _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
                             addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
@@ -4504,12 +4503,15 @@ func replayFinalState(
                 if let message = transaction.getMessage(id) {
                     updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
                 }
-                var resourceIds: [MediaResourceId] = []
-                transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-                })
-                if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                let settings = stuxnetSettings(transaction: transaction)
+                if !stuxnetMarkDeletedMessagesInIdRange(transaction: transaction, peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, timestamp: Int32(Date().timeIntervalSince1970), settings: settings) {
+                    var resourceIds: [MediaResourceId] = []
+                    transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
+                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                    })
+                    if !resourceIds.isEmpty {
+                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    }
                 }
             case let .UpdatePeerChatInclusion(peerId, groupId, changedGroup):
                 if shouldExcludePeerFromChatList(transaction: transaction, peerId: peerId) {
@@ -4538,7 +4540,7 @@ func replayFinalState(
                 transaction.updateMessage(id, update: { previousMessage in
                     var updatedFlags = message.flags
                     var updatedLocalTags = message.localTags
-                    var updatedAttributes = message.attributes
+                    var updatedAttributes = stuxnetAttributesPreservingLocalData(previousMessage: previousMessage, updatedAttributes: message.attributes)
                     if previousMessage.localTags.contains(.OutgoingLiveLocation) {
                         updatedLocalTags.insert(.OutgoingLiveLocation)
                     }

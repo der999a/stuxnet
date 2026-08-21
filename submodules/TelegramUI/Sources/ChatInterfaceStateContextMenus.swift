@@ -2327,6 +2327,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     if let authorId = message.author?.id {
                         lines.append("Author ID: \(authorId.id._internalGetInt64Value())")
                     }
+                    if let deletedTimestamp = message.stuxnetDeletedTimestamp {
+                        lines.append("Deleted locally at: \(dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(deletedTimestamp))))")
+                    }
                     if let threadId = message.threadId {
                         lines.append("Thread ID: \(threadId)")
                     }

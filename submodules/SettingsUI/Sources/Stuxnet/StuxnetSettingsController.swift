@@ -8,6 +8,7 @@ import AccountContext
 
 private final class StuxnetSettingsControllerArguments {
     let updateGhostMode: (Bool) -> Void
+    let openGhostMode: () -> Void
     let updateSendReadMessages: (Bool) -> Void
     let updateSendReadStories: (Bool) -> Void
     let updateSendOnlinePresence: (Bool) -> Void
@@ -63,6 +64,7 @@ private final class StuxnetSettingsControllerArguments {
 
     init(
         updateGhostMode: @escaping (Bool) -> Void,
+        openGhostMode: @escaping () -> Void,
         updateSendReadMessages: @escaping (Bool) -> Void,
         updateSendReadStories: @escaping (Bool) -> Void,
         updateSendOnlinePresence: @escaping (Bool) -> Void,
@@ -117,6 +119,7 @@ private final class StuxnetSettingsControllerArguments {
         clearLocalGifts: @escaping () -> Void
     ) {
         self.updateGhostMode = updateGhostMode
+        self.openGhostMode = openGhostMode
         self.updateSendReadMessages = updateSendReadMessages
         self.updateSendReadStories = updateSendReadStories
         self.updateSendOnlinePresence = updateSendOnlinePresence
@@ -176,6 +179,7 @@ private enum StuxnetSettingsSection: Int32 {
     case ghost
     case ghostDetails
     case messages
+    case confirmations
     case voiceLab
     case appearance
     case profile
@@ -184,6 +188,7 @@ private enum StuxnetSettingsSection: Int32 {
 private enum StuxnetSettingsEntry: ItemListNodeEntry {
     case ghostHeader
     case ghostMode(Bool)
+    case ghostControls(String)
     case ghostInfo
     case ghostDetailsHeader
     case sendReadMessages(Bool)
@@ -209,6 +214,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
     case deletedMessageLabel(String)
     case dimDeletedMessages(Bool)
     case messagesInfo
+    case confirmationsHeader
     case voiceLabHeader
     case voiceLabEnabled(Bool)
     case voiceLabPreset(String)
@@ -251,12 +257,14 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
-        case .ghostHeader, .ghostMode, .ghostInfo:
+        case .ghostHeader, .ghostMode, .ghostControls, .ghostInfo:
             return StuxnetSettingsSection.ghost.rawValue
         case .ghostDetailsHeader, .sendReadMessages, .sendReadStories, .sendOnlinePresence, .sendUploadProgress, .sendOfflineAfterOnline, .markReadAfterAction, .useScheduledMessagesInGhostMode, .ghostSendDelaySeconds, .ghostDetailsInfo:
             return StuxnetSettingsSection.ghostDetails.rawValue
-        case .messagesHeader, .saveDeletedMessages, .saveMessageHistory, .saveForBots, .showMessageDetails, .confirmMessageSending, .confirmMediaSending, .confirmChannelSubscriptions, .confirmCalls, .confirmStoryReplies, .confirmStoryReactions, .deletedMessageLabel, .dimDeletedMessages, .messagesInfo:
+        case .messagesHeader, .saveDeletedMessages, .saveMessageHistory, .saveForBots, .showMessageDetails, .deletedMessageLabel, .dimDeletedMessages, .messagesInfo:
             return StuxnetSettingsSection.messages.rawValue
+        case .confirmationsHeader, .confirmMessageSending, .confirmMediaSending, .confirmChannelSubscriptions, .confirmCalls, .confirmStoryReplies, .confirmStoryReactions:
+            return StuxnetSettingsSection.confirmations.rawValue
         case .voiceLabHeader, .voiceLabEnabled, .voiceLabPreset, .voiceLabPitchSemitones, .voiceLabTone, .voiceLabRobotMix, .voiceLabGainDb, .voiceLabApplyToVoiceMessages, .voiceLabApplyToRoundVideos, .voiceLabApplyToCalls, .recordRoundVideosWithRearCamera, .voiceLabInfo:
             return StuxnetSettingsSection.voiceLab.rawValue
         case .appearanceHeader, .chatsAppearance, .compactChatList, .showMessageSeconds, .showMessageDate, .showChatListSeconds, .showChatListDate, .useEnglishMonthNames, .appearanceInfo:
@@ -270,7 +278,8 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         switch self {
         case .ghostHeader: return 0
         case .ghostMode: return 1
-        case .ghostInfo: return 2
+        case .ghostControls: return 2
+        case .ghostInfo: return 3
         case .ghostDetailsHeader: return 10
         case .sendReadMessages: return 11
         case .sendReadStories: return 12
@@ -286,54 +295,55 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         case .saveMessageHistory: return 22
         case .saveForBots: return 23
         case .showMessageDetails: return 24
-        case .confirmMessageSending: return 25
-        case .confirmMediaSending: return 26
-        case .confirmChannelSubscriptions: return 27
-        case .confirmCalls: return 28
-        case .confirmStoryReplies: return 29
-        case .confirmStoryReactions: return 30
-        case .deletedMessageLabel: return 31
-        case .dimDeletedMessages: return 32
-        case .messagesInfo: return 33
-        case .voiceLabHeader: return 34
-        case .voiceLabEnabled: return 35
-        case .voiceLabPreset: return 36
-        case .voiceLabPitchSemitones: return 37
-        case .voiceLabTone: return 38
-        case .voiceLabRobotMix: return 39
-        case .voiceLabGainDb: return 40
-        case .voiceLabApplyToVoiceMessages: return 41
-        case .voiceLabApplyToRoundVideos: return 42
-        case .voiceLabApplyToCalls: return 43
-        case .recordRoundVideosWithRearCamera: return 44
-        case .voiceLabInfo: return 45
-        case .appearanceHeader: return 46
-        case .chatsAppearance: return 47
-        case .compactChatList: return 48
-        case .showMessageSeconds: return 49
-        case .showMessageDate: return 50
-        case .showChatListSeconds: return 51
-        case .showChatListDate: return 52
-        case .useEnglishMonthNames: return 53
-        case .appearanceInfo: return 54
-        case .profileHeader: return 55
-        case .localProfileEffects: return 56
-        case .hidePhoneNumberLocally: return 57
-        case .localStarsBalance: return 58
-        case .localTonBalance: return 59
-        case .manageGifts: return 60
-        case .installDemoGifts: return 61
-        case .featuredGiftInfo: return 62
-        case .featuredGiftTitle: return 63
-        case .featuredGiftModel: return 64
-        case .featuredGiftSymbol: return 65
-        case .featuredGiftNumber: return 66
-        case .featuredGiftBackground: return 67
-        case .featuredGiftColor: return 68
-        case .featuredGiftVisible: return 69
-        case .featuredGiftPinned: return 70
-        case .clearLocalGifts: return 71
-        case .profileInfo: return 72
+        case .deletedMessageLabel: return 25
+        case .dimDeletedMessages: return 26
+        case .messagesInfo: return 27
+        case .confirmationsHeader: return 28
+        case .confirmMessageSending: return 29
+        case .confirmMediaSending: return 30
+        case .confirmChannelSubscriptions: return 31
+        case .confirmCalls: return 32
+        case .confirmStoryReplies: return 33
+        case .confirmStoryReactions: return 34
+        case .voiceLabHeader: return 35
+        case .voiceLabEnabled: return 36
+        case .voiceLabPreset: return 37
+        case .voiceLabPitchSemitones: return 38
+        case .voiceLabTone: return 39
+        case .voiceLabRobotMix: return 40
+        case .voiceLabGainDb: return 41
+        case .voiceLabApplyToVoiceMessages: return 42
+        case .voiceLabApplyToRoundVideos: return 43
+        case .voiceLabApplyToCalls: return 44
+        case .recordRoundVideosWithRearCamera: return 45
+        case .voiceLabInfo: return 46
+        case .appearanceHeader: return 47
+        case .chatsAppearance: return 48
+        case .compactChatList: return 49
+        case .showMessageSeconds: return 50
+        case .showMessageDate: return 51
+        case .showChatListSeconds: return 52
+        case .showChatListDate: return 53
+        case .useEnglishMonthNames: return 54
+        case .appearanceInfo: return 55
+        case .profileHeader: return 56
+        case .localProfileEffects: return 57
+        case .hidePhoneNumberLocally: return 58
+        case .localStarsBalance: return 59
+        case .localTonBalance: return 60
+        case .manageGifts: return 61
+        case .installDemoGifts: return 62
+        case .featuredGiftInfo: return 63
+        case .featuredGiftTitle: return 64
+        case .featuredGiftModel: return 65
+        case .featuredGiftSymbol: return 66
+        case .featuredGiftNumber: return 67
+        case .featuredGiftBackground: return 68
+        case .featuredGiftColor: return 69
+        case .featuredGiftVisible: return 70
+        case .featuredGiftPinned: return 71
+        case .clearLocalGifts: return 72
+        case .profileInfo: return 73
         }
     }
 
@@ -348,8 +358,10 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "STEALTH", sectionId: self.section)
         case let .ghostMode(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Ghost Mode", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateGhostMode)
+        case let .ghostControls(value):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Ghost Mode", label: value, labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: arguments.openGhostMode)
         case .ghostInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("One switch disables read receipts, story views, online presence, typing/recording activity and upload progress. Detailed controls can still be changed independently."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain("Read receipts, story views, presence, typing and the delayed-send queue are now grouped on one account-specific screen."), sectionId: self.section)
         case .ghostDetailsHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "GHOST MODE DETAILS", sectionId: self.section)
         case let .sendReadMessages(value):
@@ -397,7 +409,9 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         case let .dimDeletedMessages(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Dim deleted messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateDimDeletedMessages)
         case .messagesInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Deleted messages remain in the local Postbox, edit revisions are attached to the message, and details expose local IDs and timestamps. Nothing is uploaded by Stuxnet."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain("Messages already received by this device are preserved when delete updates arrive immediately or after the app is reopened, including channel validation, minimum-history updates, TTL cleanup and secret-chat clears. Messages deleted before Telegram ever delivers their contents cannot be reconstructed. Edit revisions and message details remain local to this account."), sectionId: self.section)
+        case .confirmationsHeader:
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: "ACTION CONFIRMATIONS", sectionId: self.section)
         case .voiceLabHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "VOICE & CAMERA", sectionId: self.section)
         case let .voiceLabEnabled(value):
@@ -505,34 +519,33 @@ private func stuxnetParseTonNano(_ value: String) -> Int64? {
 }
 
 private func stuxnetSettingsEntries(settings: StuxnetSettings) -> [StuxnetSettingsEntry] {
+    let ghostStatus: String
+    if settings.isGhostModeEnabled {
+        ghostStatus = "Active"
+    } else if settings.ghostProtectionCount == 0 {
+        ghostStatus = "Off"
+    } else {
+        ghostStatus = "Custom \(settings.ghostProtectionCount)/6"
+    }
     let entries: [StuxnetSettingsEntry] = [
         .ghostHeader,
-        .ghostMode(settings.isGhostModeEnabled),
+        .ghostControls(ghostStatus),
         .ghostInfo,
-        .ghostDetailsHeader,
-        .sendReadMessages(settings.sendReadMessages),
-        .sendReadStories(settings.sendReadStories),
-        .sendOnlinePresence(settings.sendOnlinePresence),
-        .sendUploadProgress(settings.sendUploadProgress),
-        .sendOfflineAfterOnline(settings.sendOfflineAfterOnline),
-        .markReadAfterAction(settings.markReadAfterAction),
-        .useScheduledMessagesInGhostMode(settings.useScheduledMessagesInGhostMode),
-        .ghostSendDelaySeconds("\(settings.ghostSendDelaySeconds)"),
-        .ghostDetailsInfo,
         .messagesHeader,
         .saveDeletedMessages(settings.saveDeletedMessages),
         .saveMessageHistory(settings.saveMessageHistory),
         .saveForBots(settings.saveForBots),
         .showMessageDetails(settings.showMessageDetails),
+        .deletedMessageLabel(settings.deletedMessageLabel),
+        .dimDeletedMessages(settings.dimDeletedMessages),
+        .messagesInfo,
+        .confirmationsHeader,
         .confirmMessageSending(settings.confirmMessageSending),
         .confirmMediaSending(settings.confirmMediaSending),
         .confirmChannelSubscriptions(settings.confirmChannelSubscriptions),
         .confirmCalls(settings.confirmCalls),
         .confirmStoryReplies(settings.confirmStoryReplies),
         .confirmStoryReactions(settings.confirmStoryReactions),
-        .deletedMessageLabel(settings.deletedMessageLabel),
-        .dimDeletedMessages(settings.dimDeletedMessages),
-        .messagesInfo,
         .voiceLabHeader,
         .voiceLabEnabled(settings.voiceLabEnabled),
         .voiceLabPreset(settings.voiceLabPreset),
@@ -582,6 +595,9 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
     let arguments = StuxnetSettingsControllerArguments(
         updateGhostMode: { value in
             let _ = updateStuxnetSettingsInteractively(postbox: context.account.postbox, { $0.withUpdatedGhostMode(value) }).startStandalone()
+        },
+        openGhostMode: {
+            pushControllerImpl?(stuxnetGhostModeController(context: context))
         },
         updateSendReadMessages: { value in update { $0.sendReadMessages = value } },
         updateSendReadStories: { value in update { $0.sendReadStories = value } },
