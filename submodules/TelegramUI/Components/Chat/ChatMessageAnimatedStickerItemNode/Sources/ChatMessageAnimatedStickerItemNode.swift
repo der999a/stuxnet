@@ -1536,6 +1536,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             func finishLayout(_ animation: ListViewItemUpdateAnimation, _ apply: ListViewItemApply, _ synchronousLoads: Bool) {
                 if let strongSelf = weakSelf.value {
                     strongSelf.appliedForwardInfo = (forwardSource, forwardAuthorSignature)
+                    let dimDeletedMessage = item.message.stuxnetIsDeleted && item.context.currentStuxnetSettings.with { $0.dimDeletedMessages }
+                    strongSelf.contextSourceNode.contentNode.alpha = dimDeletedMessage ? 0.58 : 1.0
                     strongSelf.updateAccessibilityData(accessibilityData)
                     
                     strongSelf.updateAttachedDateHeader(hasDate: dateHeaderAtBottom.hasDate, hasPeer: dateHeaderAtBottom.hasTopic)

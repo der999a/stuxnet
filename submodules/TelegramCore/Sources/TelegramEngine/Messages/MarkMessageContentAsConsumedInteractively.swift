@@ -6,8 +6,10 @@ import SwiftSignalKit
 func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messageId: MessageId) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in
         if let message = transaction.getMessage(messageId), message.flags.contains(.Incoming) {
+            let sendReadMessages = stuxnetSettings(transaction: transaction).sendReadMessages
             var updateMessage = false
             var updatedAttributes = message.attributes
+            var updatedTags = message.tags
             
             for i in 0 ..< updatedAttributes.count {
                 if let attribute = updatedAttributes[i] as? ConsumableContentMessageAttribute {
@@ -15,7 +17,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                         updatedAttributes[i] = ConsumableContentMessageAttribute(consumed: true)
                         updateMessage = true
                         
-                        if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
+                        if message.id.peerId.namespace == Namespaces.Peer.SecretChat && sendReadMessages {
                             if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
                                 var layer: SecretChatLayer?
                                 switch state.embeddedState {
@@ -37,13 +39,19 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                                     }
                                 }
                             }
-                        } else {
+                        } else if sendReadMessages {
                             addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [message.id])
                         }
                     }
                 } else if let attribute = updatedAttributes[i] as? ConsumablePersonalMentionMessageAttribute, !attribute.consumed {
-                    transaction.setPendingMessageAction(type: .consumeUnseenPersonalMessage, id: messageId, action: ConsumePersonalMessageAction())
-                    updatedAttributes[i] = ConsumablePersonalMentionMessageAttribute(consumed: attribute.consumed, pending: true)
+                    if sendReadMessages {
+                        transaction.setPendingMessageAction(type: .consumeUnseenPersonalMessage, id: messageId, action: ConsumePersonalMessageAction())
+                        updatedAttributes[i] = ConsumablePersonalMentionMessageAttribute(consumed: attribute.consumed, pending: true)
+                    } else {
+                        updatedAttributes[i] = ConsumablePersonalMentionMessageAttribute(consumed: true, pending: false)
+                        updatedTags.remove(.unseenPersonalMessage)
+                    }
+                    updateMessage = true
                 }
             }
             
@@ -58,7 +66,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                         updatedAttributes[i] = AutoremoveTimeoutMessageAttribute(timeout: timeout, countdownBeginTime: timestamp)
                         updateMessage = true
                         
-                        if messageId.peerId.namespace == Namespaces.Peer.SecretChat {
+                        if messageId.peerId.namespace == Namespaces.Peer.SecretChat && sendReadMessages {
                             var layer: SecretChatLayer?
                             let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState
                             if let state = state {
@@ -89,7 +97,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                         updatedAttributes[i] = AutoclearTimeoutMessageAttribute(timeout: timeout, countdownBeginTime: timestamp)
                         updateMessage = true
                         
-                        if messageId.peerId.namespace == Namespaces.Peer.SecretChat {
+                        if messageId.peerId.namespace == Namespaces.Peer.SecretChat && sendReadMessages {
                             var layer: SecretChatLayer?
                             let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState
                             if let state = state {
@@ -120,7 +128,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                     if let forwardInfo = currentMessage.forwardInfo {
                         storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
                     }
-                    return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: updatedAttributes, media: currentMessage.media))
+                    return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: updatedTags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: updatedAttributes, media: currentMessage.media))
                 })
             }
         }
@@ -130,6 +138,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
 func _internal_markReactionsOrPollVotesAsSeenInteractively(postbox: Postbox, messageId: MessageId) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in
         if let message = transaction.getMessage(messageId), (message.tags.contains(.unseenReaction) || message.tags.contains(.unseenPollVote)) {
+            let sendReadMessages = stuxnetSettings(transaction: transaction).sendReadMessages
             var updateMessage = false
             var updatedAttributes = message.attributes
             var updatedMedia = message.media
@@ -139,8 +148,7 @@ func _internal_markReactionsOrPollVotesAsSeenInteractively(postbox: Postbox, mes
                     updatedAttributes[i] = attribute.withAllSeen()
                     updateMessage = true
                     
-                    if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
-                    } else {
+                    if message.id.peerId.namespace != Namespaces.Peer.SecretChat && sendReadMessages {
                         transaction.setPendingMessageAction(type: .readReactionOrPollVote, id: messageId, action: ReadReactionAction())
                     }
                 }
@@ -150,8 +158,7 @@ func _internal_markReactionsOrPollVotesAsSeenInteractively(postbox: Postbox, mes
                     updatedMedia[i] = poll.withoutUnreadResults()
                     updateMessage = true
                     
-                    if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
-                    } else {
+                    if message.id.peerId.namespace != Namespaces.Peer.SecretChat && sendReadMessages {
                         transaction.setPendingMessageAction(type: .readReactionOrPollVote, id: messageId, action: ReadReactionAction())
                     }
                 }

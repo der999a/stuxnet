@@ -64,6 +64,7 @@ swift_library(
         "//submodules/DeviceAccess:DeviceAccess",
         "//submodules/TelegramAudio:TelegramAudio",
         "//submodules/TelegramVoip:TelegramVoip",
+        "//submodules/AccountContext:AccountContext",
         "//submodules/ItemListUI:ItemListUI",
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/AppBundle:AppBundle",

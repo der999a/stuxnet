@@ -433,10 +433,11 @@ private class ReplyThreadHistoryContextImpl {
             let inputPeer = transaction.getPeer(messageIndex.id.peerId).flatMap(apiInputPeer)
             let readCount = transaction.getThreadMessageCount(peerId: peerId, threadId: threadId, namespace: Namespaces.Message.Cloud, fromIdExclusive: fromIdExclusive, toIndex: toIndex)
             let topMessageId = transaction.getMessagesWithThreadId(peerId: peerId, namespace: Namespaces.Message.Cloud, threadId: threadId, from: MessageIndex.upperBound(peerId: peerId, namespace: Namespaces.Message.Cloud), includeFrom: false, to: MessageIndex.lowerBound(peerId: peerId, namespace: Namespaces.Message.Cloud), limit: 1).first?.id
+            let sendReadMessages = stuxnetSettings(transaction: transaction).sendReadMessages
             
-            return (inputPeer, subPeerId, topMessageId, readCount)
+            return (inputPeer, subPeerId, topMessageId, readCount, sendReadMessages)
         }
-        |> deliverOnMainQueue).start(next: { [weak self] inputPeer, subPeerId, topMessageId, readCount in
+        |> deliverOnMainQueue).start(next: { [weak self] inputPeer, subPeerId, topMessageId, readCount, sendReadMessages in
             guard let strongSelf = self else {
                 return
             }
@@ -460,6 +461,10 @@ private class ReplyThreadHistoryContextImpl {
             }
 
             strongSelf.unreadCountValue = unreadCountValue
+
+            if !sendReadMessages {
+                return
+            }
 
             if let state = strongSelf.stateValue {
                 if let indices = state.holeIndices[messageIndex.id.namespace] {

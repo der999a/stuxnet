@@ -162,6 +162,7 @@ final class ManagedAudioRecorderContext {
     private var oggWriter: TGOggOpusWriter
     private var dataItem: TGDataItem
     private var audioBuffer = Data()
+    private var voiceLabProcessor: VoiceLabProcessor?
     
     private let audioUnit = Atomic<AudioUnit?>(value: nil)
     
@@ -198,6 +199,7 @@ final class ManagedAudioRecorderContext {
         recordingState: ValuePromise<AudioRecordingState>,
         previewState: ValuePromise<AudioPreviewState>,
         beginWithTone: Bool,
+        voiceLabConfiguration: VoiceLabConfiguration,
         beganWithTone: @escaping (Bool) -> Void
     ) {
         assert(queue.isCurrent())
@@ -213,6 +215,9 @@ final class ManagedAudioRecorderContext {
         self.queue = queue
         self.mediaManager = mediaManager
         self.oggWriter = TGOggOpusWriter()
+        if VoiceLabProcessor.isActive(voiceLabConfiguration) {
+            self.voiceLabProcessor = VoiceLabProcessor(configuration: voiceLabConfiguration, sampleRate: 48_000.0)
+        }
         
         if let resumeData {
             self.dataItem = TGDataItem(data: resumeData.compressedData)
@@ -621,6 +626,7 @@ final class ManagedAudioRecorderContext {
                 self.audioBuffer.append(currentEncoderPacket.assumingMemoryBound(to: UInt8.self), count: currentEncoderPacketSize)
                 break
             } else {
+                self.voiceLabProcessor?.processInt16(samples: currentEncoderPacket.assumingMemoryBound(to: Int16.self), frameCount: currentEncoderPacketSize / 2)
                 self.processWaveformPreview(samples: currentEncoderPacket.assumingMemoryBound(to: Int16.self), count: currentEncoderPacketSize / 2)
                 
                 self.oggWriter.writeFrame(currentEncoderPacket.assumingMemoryBound(to: UInt8.self), frameByteCount: UInt(currentEncoderPacketSize))
@@ -779,11 +785,12 @@ final class ManagedAudioRecorderImpl: ManagedAudioRecorder {
         resumeData: AudioRecorderResumeData?,
         pushIdleTimerExtension: @escaping () -> Disposable,
         beginWithTone: Bool,
+        voiceLabConfiguration: VoiceLabConfiguration,
         beganWithTone: @escaping (Bool) -> Void
     ) {
         self.beginWithTone = beginWithTone
         self.queue.async {
-            let context = ManagedAudioRecorderContext(queue: self.queue, mediaManager: mediaManager, resumeData: resumeData, pushIdleTimerExtension: pushIdleTimerExtension, micLevel: self.micLevelValue, recordingState: self.recordingStateValue, previewState: self.previewStateValue, beginWithTone: beginWithTone, beganWithTone: beganWithTone)
+            let context = ManagedAudioRecorderContext(queue: self.queue, mediaManager: mediaManager, resumeData: resumeData, pushIdleTimerExtension: pushIdleTimerExtension, micLevel: self.micLevelValue, recordingState: self.recordingStateValue, previewState: self.previewStateValue, beginWithTone: beginWithTone, voiceLabConfiguration: voiceLabConfiguration, beganWithTone: beganWithTone)
             self.contextRef = Unmanaged.passRetained(context)
         }
     }

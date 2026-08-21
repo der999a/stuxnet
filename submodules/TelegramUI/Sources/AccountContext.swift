@@ -145,6 +145,8 @@ public final class AccountContextImpl: AccountContext {
     public var contentSettings: Signal<ContentSettings, NoError> {
         return self._contentSettings.get()
     }
+
+    public let currentStuxnetSettings = Atomic<StuxnetSettings>(value: .defaultSettings)
     
     public var currentAppConfiguration: Atomic<AppConfiguration>
     private let _appConfiguration = Promise<AppConfiguration>()
@@ -161,6 +163,7 @@ public final class AccountContextImpl: AccountContext {
     private var storedPassword: (String, CFAbsoluteTime, SwiftSignalKit.Timer)?
     private var limitsConfigurationDisposable: Disposable?
     private var contentSettingsDisposable: Disposable?
+    private var stuxnetSettingsDisposable: Disposable?
     private var appConfigurationDisposable: Disposable?
     private var countriesConfigurationDisposable: Disposable?
     
@@ -352,6 +355,12 @@ public final class AccountContextImpl: AccountContext {
         |> deliverOnMainQueue).start(next: { value in
             let _ = currentContentSettings.swap(value)
         })
+
+        let currentStuxnetSettings = self.currentStuxnetSettings
+        self.stuxnetSettingsDisposable = (stuxnetSettings(postbox: account.postbox)
+        |> deliverOnMainQueue).start(next: { value in
+            let _ = currentStuxnetSettings.swap(value)
+        })
         
         let updatedAppConfiguration = getAppConfiguration(engine: self.engine)
         self.currentAppConfiguration = Atomic(value: appConfiguration)
@@ -508,6 +517,7 @@ public final class AccountContextImpl: AccountContext {
         self.limitsConfigurationDisposable?.dispose()
         self.managedAppSpecificContactsDisposable?.dispose()
         self.contentSettingsDisposable?.dispose()
+        self.stuxnetSettingsDisposable?.dispose()
         self.appConfigurationDisposable?.dispose()
         self.countriesConfigurationDisposable?.dispose()
         self.experimentalUISettingsDisposable?.dispose()
@@ -820,6 +830,26 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func requestCall(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {
+        if self.currentStuxnetSettings.with({ $0.confirmCalls }), let mainWindow = self.sharedContext.mainWindow {
+            let presentationData = self.sharedContext.currentPresentationData.with { $0 }
+            mainWindow.present(textAlertController(
+                context: self,
+                title: isVideo ? "Start video call?" : "Start voice call?",
+                text: "Call this contact now?",
+                actions: [
+                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .defaultAction, title: "Call", action: { [weak self] in
+                        self?.requestCallImpl(peerId: peerId, isVideo: isVideo, completion: completion)
+                    })
+                ]
+            ), on: .root)
+            return
+        }
+
+        self.requestCallImpl(peerId: peerId, isVideo: isVideo, completion: completion)
+    }
+
+    private func requestCallImpl(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {
         guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {
             return
         }

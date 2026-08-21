@@ -3,6 +3,53 @@ import SwiftSignalKit
 import TelegramVoip
 import TelegramAudio
 import DeviceProximity
+import AccountContext
+
+private final class VoiceLabCallAudioProcessor {
+    private let configuration: VoiceLabConfiguration
+    private var sampleRate: Float = 0.0
+    private var channelProcessors: [VoiceLabProcessor] = []
+
+    init(configuration: VoiceLabConfiguration) {
+        self.configuration = configuration
+        self.sampleRate = 48_000.0
+        self.channelProcessors = [VoiceLabProcessor(configuration: configuration, sampleRate: 48_000.0)]
+    }
+
+    func process(samples: UnsafeMutableRawPointer, frameCount: Int, bytesPerSample: Int, channelCount: Int, sampleRate: Int) {
+        guard frameCount > 0, bytesPerSample == MemoryLayout<Int16>.size, channelCount > 0, sampleRate > 0 else {
+            return
+        }
+        let rate = Float(sampleRate)
+        if abs(self.sampleRate - rate) > 0.5 {
+            self.sampleRate = rate
+            self.channelProcessors.removeAll(keepingCapacity: true)
+        }
+        while self.channelProcessors.count < channelCount {
+            self.channelProcessors.append(VoiceLabProcessor(configuration: self.configuration, sampleRate: rate))
+        }
+        let pcm = samples.assumingMemoryBound(to: Int16.self)
+        for channel in 0 ..< channelCount {
+            self.channelProcessors[channel].processInt16(
+                samples: pcm.advanced(by: channel),
+                frameCount: frameCount,
+                stride: channelCount
+            )
+        }
+    }
+}
+
+func stuxnetCallVoiceLabConfiguration(context: AccountContext) -> VoiceLabConfiguration {
+    let settings = context.currentStuxnetSettings.with { $0 }
+    return VoiceLabConfiguration(
+        isEnabled: settings.voiceLabEnabled && settings.voiceLabApplyToCalls,
+        preset: settings.voiceLabPreset,
+        pitchSemitones: Float(settings.voiceLabPitchSemitones),
+        tone: Float(settings.voiceLabTone) / 100.0,
+        robotMix: Float(settings.voiceLabRobotMix) / 100.0,
+        gainDb: Float(settings.voiceLabGainDb)
+    )
+}
 
 public final class SharedCallAudioContext {
     private static weak var current: SharedCallAudioContext? 
@@ -44,6 +91,17 @@ public final class SharedCallAudioContext {
         let context = SharedCallAudioContext(audioSession: audioSession, callKitIntegration: callKitIntegration, defaultToSpeaker: defaultToSpeaker, enableMicrophone: enableMicrophone)
         self.current = context
         return context
+    }
+
+    func configureVoiceLab(_ configuration: VoiceLabConfiguration) {
+        guard VoiceLabProcessor.isActive(configuration) else {
+            self.audioDevice?.setInputAudioProcessor(nil)
+            return
+        }
+        let processor = VoiceLabCallAudioProcessor(configuration: configuration)
+        self.audioDevice?.setInputAudioProcessor { samples, frameCount, bytesPerSample, channelCount, sampleRate in
+            processor.process(samples: samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
+        }
     }
     
     private init(audioSession: ManagedAudioSession, callKitIntegration: CallKitIntegration?, defaultToSpeaker: Bool = false, enableMicrophone: Bool = true) {

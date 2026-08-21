@@ -4440,19 +4440,66 @@ func replayFinalState(
                     }
                 }
             case let .DeleteMessagesWithGlobalIds(ids):
-                var resourceIds: [MediaResourceId] = []
-                transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-                })
-                if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                let settings = stuxnetSettings(transaction: transaction)
+                if settings.saveDeletedMessages {
+                    let timestamp = Int32(Date().timeIntervalSince1970)
+                    var preservedGlobalIds = Set<Int32>()
+                    for globalId in ids {
+                        guard let id = transaction.messageIdsForGlobalIds([globalId]).first else {
+                            continue
+                        }
+                        let isBotChat = (transaction.getPeer(id.peerId) as? TelegramUser)?.botInfo != nil
+                        if settings.saveForBots || !isBotChat {
+                            preservedGlobalIds.insert(globalId)
+                            stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: timestamp)
+                        }
+                    }
+                    let idsToDelete = ids.filter { !preservedGlobalIds.contains($0) }
+                    if !idsToDelete.isEmpty {
+                        var resourceIds: [MediaResourceId] = []
+                        transaction.deleteMessagesWithGlobalIds(idsToDelete, forEachMedia: { media in
+                            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                        })
+                        if !resourceIds.isEmpty {
+                            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                        }
+                        deletedMessageIds.append(contentsOf: idsToDelete.map { .global($0) })
+                    }
+                } else {
+                    var resourceIds: [MediaResourceId] = []
+                    transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
+                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                    })
+                    if !resourceIds.isEmpty {
+                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    }
+                    deletedMessageIds.append(contentsOf: ids.map { .global($0) })
                 }
-                deletedMessageIds.append(contentsOf: ids.map { .global($0) })
             case let .DeleteMessages(ids):
-                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
-                    addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-                })
-                deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+                let settings = stuxnetSettings(transaction: transaction)
+                if settings.saveDeletedMessages {
+                    let timestamp = Int32(Date().timeIntervalSince1970)
+                    var idsToDelete: [MessageId] = []
+                    for id in ids {
+                        let isBotChat = (transaction.getPeer(id.peerId) as? TelegramUser)?.botInfo != nil
+                        if settings.saveForBots || !isBotChat {
+                            stuxnetMarkMessageDeleted(transaction: transaction, id: id, timestamp: timestamp)
+                        } else {
+                            idsToDelete.append(id)
+                        }
+                    }
+                    if !idsToDelete.isEmpty {
+                        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
+                            addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+                        })
+                        deletedMessageIds.append(contentsOf: idsToDelete.map { .messageId($0) })
+                    }
+                } else {
+                    _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+                        addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+                    })
+                    deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+                }
             case let .UpdateMinAvailableMessage(id):
                 if let message = transaction.getMessage(id) {
                     updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
@@ -4487,6 +4534,7 @@ func replayFinalState(
                 }
             case let .EditMessage(id, message):
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+                let stuxnetSettings = stuxnetSettings(transaction: transaction)
                 transaction.updateMessage(id, update: { previousMessage in
                     var updatedFlags = message.flags
                     var updatedLocalTags = message.localTags
@@ -4521,6 +4569,15 @@ func replayFinalState(
                             updatedAttributes.removeAll(where: { $0 is FactCheckMessageAttribute })
                             updatedAttributes.append(previousFactCheckAttribute)
                         }
+                    }
+
+                    let isBotChat = (transaction.getPeer(previousMessage.id.peerId) as? TelegramUser)?.botInfo != nil
+                    if stuxnetSettings.saveMessageHistory && (stuxnetSettings.saveForBots || !isBotChat) && previousMessage.flags.contains(.Incoming) && previousMessage.text != message.text {
+                        updatedAttributes = stuxnetAttributesWithRevision(
+                            previousMessage: previousMessage,
+                            updatedAttributes: updatedAttributes,
+                            timestamp: Int32(Date().timeIntervalSince1970)
+                        )
                     }
                     
                     if let message = locallyRenderedMessage(message: message, peers: peers) {

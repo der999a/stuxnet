@@ -163,6 +163,7 @@ enum PeerInfoSettingsSection {
     case chatFolders
     case notificationsAndSounds
     case privacyAndSecurity
+    case stuxnet
     case passwordSetup
     case dataAndStorage
     case appearance
@@ -2246,7 +2247,14 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 switchToUpgradableGifts = true
             }
             
-            screenData = peerInfoScreenData(context: context, peerId: peerId, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, isSettings: self.isSettings, isMyProfile: self.isMyProfile, hintGroupInCommon: hintGroupInCommon, existingRequestsContext: requestsContext, existingProfileGiftsContext: profileGiftsContext, existingProfileGiftsCollectionsContext: nil, chatLocation: self.chatLocation, chatLocationContextHolder: self.chatLocationContextHolder, sharedMediaFromForumTopic: self.sharedMediaFromForumTopic, privacySettings: self.privacySettings.get(), forceHasGifts: initialPaneKey == .gifts, switchToUpgradableGifts: switchToUpgradableGifts)
+            let hasStuxnetProfileGifts = context.currentStuxnetSettings.with { settings in
+                settings.localProfileEffects && settings.localGifts.contains(where: {
+                    $0.visible
+                        && $0.sourceGift != nil
+                        && $0.isOwned(by: peerId, accountPeerId: context.account.peerId)
+                })
+            }
+            screenData = peerInfoScreenData(context: context, peerId: peerId, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, isSettings: self.isSettings, isMyProfile: self.isMyProfile, hintGroupInCommon: hintGroupInCommon, existingRequestsContext: requestsContext, existingProfileGiftsContext: profileGiftsContext, existingProfileGiftsCollectionsContext: nil, chatLocation: self.chatLocation, chatLocationContextHolder: self.chatLocationContextHolder, sharedMediaFromForumTopic: self.sharedMediaFromForumTopic, privacySettings: self.privacySettings.get(), forceHasGifts: initialPaneKey == .gifts || hasStuxnetProfileGifts, switchToUpgradableGifts: switchToUpgradableGifts)
                        
             var previousTimestamp: Double?
             self.headerNode.displayPremiumIntro = { [weak self] sourceView, peerStatus, emojiStatusFileAndPack, white in
@@ -2422,7 +2430,24 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         }
         
         self.headerNode.openUniqueGift = { [weak self] _, slug in
-            guard let self, let profileGifts = self.data?.profileGiftsContext else {
+            guard let self else {
+                return
+            }
+            if let localGift = self.context.currentStuxnetSettings.with({ settings in
+                settings.localGifts.first(where: {
+                    $0.visible
+                        && $0.uniqueSlug == slug
+                        && $0.isOwned(by: self.peerId, accountPeerId: self.context.account.peerId)
+                })
+            }), let sourceGift = localGift.effectiveSourceGift {
+                self.controller?.push(GiftViewScreen(
+                    context: self.context,
+                    subject: .wearPreview(sourceGift, localGift.previewAttributes.isEmpty ? nil : localGift.previewAttributes),
+                    customAction: GiftViewScreen.CustomAction(title: self.presentationData.strings.Common_Done, action: {})
+                ))
+                return
+            }
+            guard let profileGifts = self.data?.profileGiftsContext else {
                 return
             }
             var found = false
@@ -6204,8 +6229,27 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
         return false
     }
     
-    fileprivate func joinChannel(peer: EnginePeer) {
+    fileprivate func joinChannel(peer: EnginePeer, skipConfirmation: Bool = false) {
         let presentationData = self.presentationData
+        if !skipConfirmation,
+           case let .channel(channel) = peer,
+           case .broadcast = channel.info,
+           self.context.currentStuxnetSettings.with({ $0.confirmChannelSubscriptions }) {
+            self.controller?.present(textAlertController(
+                context: self.context,
+                updatedPresentationData: self.controller?.updatedPresentationData,
+                title: presentationData.strings.Channel_JoinChannel,
+                text: "Subscribe to \(peer.compactDisplayTitle)?",
+                actions: [
+                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .defaultAction, title: presentationData.strings.Channel_JoinChannel, action: { [weak self] in
+                        self?.joinChannel(peer: peer, skipConfirmation: true)
+                    })
+                ]
+            ), in: .window(.root))
+            return
+        }
+
         self.joinChannelDisposable.set((
             self.context.peerChannelMemberCategoriesContextsManager.join(engine: self.context.engine, peerId: peer.id, hash: nil)
             |> deliverOnMainQueue
@@ -6233,7 +6277,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             case .tooMuchJoined:
                 self.controller?.push(oldChannelsController(context: context, intent: .join, completed: { [weak self] value in
                     if value {
-                        self?.joinChannel(peer: peer)
+                        self?.joinChannel(peer: peer, skipConfirmation: true)
                     }
                 }))
                 return

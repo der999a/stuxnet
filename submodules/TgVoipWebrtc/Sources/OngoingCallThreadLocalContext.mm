@@ -141,6 +141,7 @@ class WrappedAudioDeviceModuleIOS : public tgcalls::DefaultWrappedAudioDeviceMod
 public:
     WrappedAudioDeviceModuleIOS(webrtc::scoped_refptr<webrtc::AudioDeviceModule> impl) :
     tgcalls::DefaultWrappedAudioDeviceModule(impl) {
+        _processedAudioSamples.reserve(1920);
     }
 
     virtual ~WrappedAudioDeviceModuleIOS() {
@@ -178,6 +179,26 @@ public:
         }
         
         _mutex.Unlock();
+    }
+
+    void SetInputAudioProcessor(CallAudioInputProcessor processor) {
+        _mutex.Lock();
+        _inputAudioProcessor = [processor copy];
+        if (_inputAudioProcessor == nil) {
+            _processedAudioSamples.clear();
+        }
+        _mutex.Unlock();
+    }
+
+    const void *ProcessRecordedAudio(const void *audioSamples, size_t nSamples, size_t nBytesPerSample, size_t nChannels, uint32_t samplesPerSec) {
+        if (_inputAudioProcessor == nil || audioSamples == nullptr || nSamples == 0 || nBytesPerSample != sizeof(int16_t) || nChannels == 0) {
+            return audioSamples;
+        }
+        const size_t sampleCount = nSamples * nChannels;
+        _processedAudioSamples.resize(sampleCount);
+        memcpy(_processedAudioSamples.data(), audioSamples, sampleCount * sizeof(int16_t));
+        _inputAudioProcessor(_processedAudioSamples.data(), (NSInteger)nSamples, (NSInteger)nBytesPerSample, (NSInteger)nChannels, (NSInteger)samplesPerSec);
+        return _processedAudioSamples.data();
     }
 
     virtual int32_t RegisterAudioCallback(webrtc::AudioTransport *audioCallback) override {
@@ -488,10 +509,11 @@ public:
         uint32_t& newMicLevel
     ) override {
         _mutex.Lock();
+        const void *processedAudioSamples = ProcessRecordedAudio(audioSamples, nSamples, nBytesPerSample, nChannels, samplesPerSec);
         if (!_audioTransports.empty()) {
             for (size_t i = 0; i < _audioTransports.size(); i++) {
                 _audioTransports[i].first->RecordedDataIsAvailable(
-                    audioSamples,
+                    processedAudioSamples,
                     nSamples,
                     nBytesPerSample,
                     nChannels,
@@ -522,10 +544,11 @@ public:
         absl::optional<int64_t> estimatedCaptureTimeNS
     ) override {
         _mutex.Lock();
+        const void *processedAudioSamples = ProcessRecordedAudio(audioSamples, nSamples, nBytesPerSample, nChannels, samplesPerSec);
         if (!_audioTransports.empty()) {
             for (size_t i = 0; i < _audioTransports.size(); i++) {
                 _audioTransports[i].first->RecordedDataIsAvailable(
-                    audioSamples,
+                    processedAudioSamples,
                     nSamples,
                     nBytesPerSample,
                     nChannels,
@@ -697,6 +720,8 @@ private:
     std::vector<std::pair<webrtc::AudioTransport *, bool>> _audioTransports;
     webrtc::Mutex _mutex;
     std::vector<int16_t> _mixAudioSamples;
+    CallAudioInputProcessor __strong _inputAudioProcessor = nil;
+    std::vector<int16_t> _processedAudioSamples;
 };
 
 class WrappedChildAudioDeviceModule : public tgcalls::DefaultWrappedAudioDeviceModule {
@@ -805,6 +830,13 @@ private:
         webrtc::tgcalls_ios_adm::AudioDeviceModuleIOS *deviceModule_iOS = (webrtc::tgcalls_ios_adm::AudioDeviceModuleIOS *)deviceModule->WrappedInstance().get();
         deviceModule_iOS->setTone([tone asTone]);
         #endif
+    });
+}
+
+- (void)setInputAudioProcessor:(CallAudioInputProcessor _Nullable)processor {
+    _audioDeviceModule->perform([processor](tgcalls::SharedAudioDeviceModule *audioDeviceModule) {
+        WrappedAudioDeviceModuleIOS *deviceModule = (WrappedAudioDeviceModuleIOS *)audioDeviceModule->audioDeviceModule().get();
+        deviceModule->SetInputAudioProcessor(processor);
     });
 }
 

@@ -849,6 +849,10 @@ public final class OngoingCallContext {
                 CallAudioTone(samples: tone.samples, sampleRate: tone.sampleRate, loopCount: tone.loopCount)
             })
         }
+
+        public func setInputAudioProcessor(_ processor: ((UnsafeMutableRawPointer, Int, Int, Int, Int) -> Void)?) {
+            self.impl.setInputAudioProcessor(processor)
+        }
     }
     
     public static func setupAudioSession() {

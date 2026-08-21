@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVFoundation
 import Display
 import AsyncDisplayKit
 import ComponentFlow
@@ -30,6 +31,135 @@ import ChatSendMessageActionUI
 import ChatControllerInteraction
 import LottieComponent
 import GlassBackgroundComponent
+
+private final class VoiceLabCameraAudioProcessor {
+    private let configuration: VoiceLabConfiguration
+    private var sampleRate: Float = 0.0
+    private var channelProcessors: [VoiceLabProcessor] = []
+    private var audioBufferListStorage: UnsafeMutableRawPointer?
+    private var audioBufferListCapacity = 0
+
+    init(configuration: VoiceLabConfiguration) {
+        self.configuration = configuration
+        self.sampleRate = 48_000.0
+        self.channelProcessors = [VoiceLabProcessor(configuration: configuration, sampleRate: 48_000.0)]
+        self.audioBufferListCapacity = max(64, MemoryLayout<AudioBufferList>.size)
+        self.audioBufferListStorage = UnsafeMutableRawPointer.allocate(byteCount: self.audioBufferListCapacity, alignment: 16)
+    }
+
+    deinit {
+        self.audioBufferListStorage?.deallocate()
+    }
+
+    private func ensureAudioBufferListStorage(requiredSize: Int) -> UnsafeMutableRawPointer {
+        if let storage = self.audioBufferListStorage, self.audioBufferListCapacity >= requiredSize {
+            return storage
+        }
+        let newCapacity = max(requiredSize, max(MemoryLayout<AudioBufferList>.size, self.audioBufferListCapacity * 2))
+        let storage = UnsafeMutableRawPointer.allocate(byteCount: newCapacity, alignment: 16)
+        self.audioBufferListStorage?.deallocate()
+        self.audioBufferListStorage = storage
+        self.audioBufferListCapacity = newCapacity
+        return storage
+    }
+
+    private func prepareProcessors(count: Int, sampleRate: Float) {
+        if abs(self.sampleRate - sampleRate) > 0.5 {
+            self.sampleRate = sampleRate
+            self.channelProcessors.removeAll(keepingCapacity: true)
+        }
+        while self.channelProcessors.count < count {
+            self.channelProcessors.append(VoiceLabProcessor(configuration: self.configuration, sampleRate: sampleRate))
+        }
+    }
+
+    func process(_ sampleBuffer: CMSampleBuffer) {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              CMFormatDescriptionGetMediaType(formatDescription) == kCMMediaType_Audio,
+              let description = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)?.pointee,
+              description.mFormatID == kAudioFormatLinearPCM else {
+            return
+        }
+
+        let sampleRate = Float(description.mSampleRate)
+        let channelCount = max(1, Int(description.mChannelsPerFrame))
+        let isFloat = (description.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let bytesPerSample: Int
+        if isFloat && description.mBitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Float>.size
+        } else if !isFloat && description.mBitsPerChannel == 16 {
+            bytesPerSample = MemoryLayout<Int16>.size
+        } else {
+            return
+        }
+
+        var requiredSize = 0
+        let sizeStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &requiredSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: nil
+        )
+        guard sizeStatus == noErr, requiredSize >= MemoryLayout<AudioBufferList>.size else {
+            return
+        }
+
+        let storage = self.ensureAudioBufferListStorage(requiredSize: requiredSize)
+        let audioBufferList = storage.assumingMemoryBound(to: AudioBufferList.self)
+        var retainedBlockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: audioBufferList,
+            bufferListSize: requiredSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &retainedBlockBuffer
+        )
+        guard status == noErr else {
+            return
+        }
+
+        self.prepareProcessors(count: channelCount, sampleRate: sampleRate)
+        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+        var channelBase = 0
+        for buffer in buffers {
+            guard let data = buffer.mData else {
+                channelBase += max(1, Int(buffer.mNumberChannels))
+                continue
+            }
+            let channelsInBuffer = max(1, Int(buffer.mNumberChannels))
+            let valueCount = Int(buffer.mDataByteSize) / bytesPerSample
+            let frameCount = valueCount / channelsInBuffer
+            guard frameCount > 0 else {
+                channelBase += channelsInBuffer
+                continue
+            }
+            for channel in 0 ..< channelsInBuffer {
+                let processorIndex = min(self.channelProcessors.count - 1, channelBase + channel)
+                if isFloat {
+                    self.channelProcessors[processorIndex].processFloat32(
+                        samples: data.assumingMemoryBound(to: Float.self).advanced(by: channel),
+                        frameCount: frameCount,
+                        stride: channelsInBuffer
+                    )
+                } else {
+                    self.channelProcessors[processorIndex].processInt16(
+                        samples: data.assumingMemoryBound(to: Int16.self).advanced(by: channel),
+                        frameCount: frameCount,
+                        stride: channelsInBuffer
+                    )
+                }
+            }
+            channelBase += channelsInBuffer
+        }
+    }
+}
 
 struct CameraState: Equatable {
     enum Recording: Equatable {
@@ -861,6 +991,7 @@ public class VideoMessageCameraScreen: ViewController {
         private weak var controller: VideoMessageCameraScreen?
         private let context: AccountContext
         fileprivate var camera: Camera?
+        private var voiceLabCameraAudioProcessor: VoiceLabCameraAudioProcessor?
         private let updateState: ActionSlot<CameraState>
         
         fileprivate var liveUploadInterface: LegacyLiveUploadInterface?
@@ -950,7 +1081,7 @@ public class VideoMessageCameraScreen: ViewController {
             self.previewContainerView.addSubview(self.previewContainerContentView)
                         
             let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)
-            let isFrontPosition = "".isEmpty
+            let isFrontPosition = controller.startWithFrontCamera
             
             self.mainPreviewView = CameraSimplePreviewView(frame: .zero, main: true, roundVideo: true)
             self.additionalPreviewView = CameraSimplePreviewView(frame: .zero, main: false, roundVideo: true)
@@ -1069,6 +1200,21 @@ public class VideoMessageCameraScreen: ViewController {
                 return
             }
             
+            let stuxnetSettings = self.context.currentStuxnetSettings.with { $0 }
+            let voiceLabConfiguration = VoiceLabConfiguration(
+                isEnabled: stuxnetSettings.voiceLabEnabled && stuxnetSettings.voiceLabApplyToRoundVideos,
+                preset: stuxnetSettings.voiceLabPreset,
+                pitchSemitones: Float(stuxnetSettings.voiceLabPitchSemitones),
+                tone: Float(stuxnetSettings.voiceLabTone) / 100.0,
+                robotMix: Float(stuxnetSettings.voiceLabRobotMix) / 100.0,
+                gainDb: Float(stuxnetSettings.voiceLabGainDb)
+            )
+            if VoiceLabProcessor.isActive(voiceLabConfiguration) {
+                self.voiceLabCameraAudioProcessor = VoiceLabCameraAudioProcessor(configuration: voiceLabConfiguration)
+            } else {
+                self.voiceLabCameraAudioProcessor = nil
+            }
+
             let camera = Camera(
                 configuration: Camera.Configuration(
                     preset: .hd1920x1080,
@@ -1077,7 +1223,10 @@ public class VideoMessageCameraScreen: ViewController {
                     audio: true,
                     photo: false,
                     metadata: false,
-                    isRoundVideo: true
+                    isRoundVideo: true,
+                    audioSampleBufferProcessor: { [weak self] sampleBuffer in
+                        self?.voiceLabCameraAudioProcessor?.process(sampleBuffer)
+                    }
                 ),
                 previewView: self.mainPreviewView,
                 secondaryPreviewView: self.additionalPreviewView
@@ -1640,6 +1789,7 @@ public class VideoMessageCameraScreen: ViewController {
 
     private let context: AccountContext
     private let updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?
+    fileprivate let startWithFrontCamera: Bool
     private let inputPanelFrame: (CGRect, Bool)
     fileprivate var allowLiveUpload: Bool
     fileprivate var viewOnceAvailable: Bool
@@ -1795,6 +1945,7 @@ public class VideoMessageCameraScreen: ViewController {
         updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?,
         allowLiveUpload: Bool,
         viewOnceAvailable: Bool,
+        startWithFrontCamera: Bool,
         inputPanelFrame: (CGRect, Bool),
         chatNode: ASDisplayNode?,
         completion: @escaping (EnqueueMessage?, Bool?, Int32?, Int32?) -> Void
@@ -1803,6 +1954,7 @@ public class VideoMessageCameraScreen: ViewController {
         self.updatedPresentationData = updatedPresentationData
         self.allowLiveUpload = allowLiveUpload
         self.viewOnceAvailable = viewOnceAvailable
+        self.startWithFrontCamera = startWithFrontCamera
         self.inputPanelFrame = inputPanelFrame
         self.chatNode = chatNode
         self.completion = completion

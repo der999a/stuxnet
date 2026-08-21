@@ -67,6 +67,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
     private var context: AccountContext?
     private weak var view: StoryItemSetContainerComponent.View?
     private var inputPanelExternalState: MessageInputPanelComponent.ExternalState?
+    private var bypassNextStoryReplyConfirmation = false
 
     weak var attachmentController: AttachmentController?
     weak var shareController: ViewController?
@@ -672,11 +673,63 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
         })
     }
 
+    private func performWithStoryReplyConfirmation(view: StoryItemSetContainerComponent.View, confirmed: Bool, action: @escaping () -> Void) {
+        guard let component = view.component else {
+            return
+        }
+        guard !confirmed, component.context.currentStuxnetSettings.with({ $0.confirmStoryReplies }) else {
+            action()
+            return
+        }
+        let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+        component.controller()?.present(textAlertController(
+            context: component.context,
+            updatedPresentationData: (presentationData, .single(presentationData)),
+            title: "Send story reply?",
+            text: "Review this action before it is sent.",
+            actions: [
+                TextAlertAction(type: .genericAction, title: "Cancel", action: {}),
+                TextAlertAction(type: .defaultAction, title: "Send", action: action)
+            ]
+        ), in: .window(.root))
+    }
+
+    private func performWithStoryReactionConfirmation(view: StoryItemSetContainerComponent.View, action: @escaping () -> Void) {
+        guard let component = view.component else {
+            return
+        }
+        guard component.context.currentStuxnetSettings.with({ $0.confirmStoryReactions }) else {
+            action()
+            return
+        }
+        let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+        component.controller()?.present(textAlertController(
+            context: component.context,
+            updatedPresentationData: (presentationData, .single(presentationData)),
+            title: "React to this story?",
+            text: "The story owner may see your reaction.",
+            actions: [
+                TextAlertAction(type: .genericAction, title: "Cancel", action: {}),
+                TextAlertAction(type: .defaultAction, title: "React", action: action)
+            ]
+        ), in: .window(.root))
+    }
+
     func performSendMessageAction(
         view: StoryItemSetContainerComponent.View,
         silentPosting: Bool = false,
-        scheduleTime: Int32? = nil
+        scheduleTime: Int32? = nil,
+        confirmed: Bool = false
     ) {
+        if !confirmed {
+            self.performWithStoryReplyConfirmation(view: view, confirmed: false, action: { [weak self, weak view] in
+                guard let self, let view else {
+                    return
+                }
+                self.performSendMessageAction(view: view, silentPosting: silentPosting, scheduleTime: scheduleTime, confirmed: true)
+            })
+            return
+        }
         guard let component = view.component else {
             return
         }
@@ -842,6 +895,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
 
                     view.state?.updated(transition: ComponentTransition(animation: .curve(duration: 0.3, curve: .spring)))
                 } else if self.hasRecordedVideoPreview, let videoRecorderValue = self.videoRecorderValue {
+                    self.bypassNextStoryReplyConfirmation = true
                     videoRecorderValue.send()
                     self.hasRecordedVideoPreview = false
                     self.videoRecorder.set(.single(nil))
@@ -883,7 +937,16 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
         })
     }
 
-    func performSendStickerAction(view: StoryItemSetContainerComponent.View, fileReference: FileMediaReference) {
+    func performSendStickerAction(view: StoryItemSetContainerComponent.View, fileReference: FileMediaReference, confirmed: Bool = false) {
+        if !confirmed {
+            self.performWithStoryReplyConfirmation(view: view, confirmed: false, action: { [weak self, weak view] in
+                guard let self, let view else {
+                    return
+                }
+                self.performSendStickerAction(view: view, fileReference: fileReference, confirmed: true)
+            })
+            return
+        }
         self.performWithPossibleStealthModeConfirmation(view: view, action: { [weak self, weak view] in
             guard let self, let view else {
                 return
@@ -947,7 +1010,16 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
         })
     }
 
-    func performSendContextResultAction(view: StoryItemSetContainerComponent.View, results: ChatContextResultCollection, result: ChatContextResult, silentPosting: Bool = false, scheduleTime: Int32? = nil) {
+    func performSendContextResultAction(view: StoryItemSetContainerComponent.View, results: ChatContextResultCollection, result: ChatContextResult, silentPosting: Bool = false, scheduleTime: Int32? = nil, confirmed: Bool = false) {
+        if !confirmed {
+            self.performWithStoryReplyConfirmation(view: view, confirmed: false, action: { [weak self, weak view] in
+                guard let self, let view else {
+                    return
+                }
+                self.performSendContextResultAction(view: view, results: results, result: result, silentPosting: silentPosting, scheduleTime: scheduleTime, confirmed: true)
+            })
+            return
+        }
         guard let component = view.component else {
             return
         }
@@ -1150,7 +1222,16 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                     }
                 } else {
                     if self.audioRecorderValue == nil {
-                        self.audioRecorder.set(component.context.sharedContext.mediaManager.audioRecorder(resumeData: nil, beginWithTone: false, applicationBindings: component.context.sharedContext.applicationBindings, beganWithTone: { _ in
+                        let stuxnetSettings = component.context.currentStuxnetSettings.with { $0 }
+                        let voiceLabConfiguration = VoiceLabConfiguration(
+                            isEnabled: stuxnetSettings.voiceLabEnabled && stuxnetSettings.voiceLabApplyToVoiceMessages,
+                            preset: stuxnetSettings.voiceLabPreset,
+                            pitchSemitones: Float(stuxnetSettings.voiceLabPitchSemitones),
+                            tone: Float(stuxnetSettings.voiceLabTone) / 100.0,
+                            robotMix: Float(stuxnetSettings.voiceLabRobotMix) / 100.0,
+                            gainDb: Float(stuxnetSettings.voiceLabGainDb)
+                        )
+                        self.audioRecorder.set(component.context.sharedContext.mediaManager.audioRecorder(resumeData: nil, beginWithTone: false, voiceLabConfiguration: voiceLabConfiguration, applicationBindings: component.context.sharedContext.applicationBindings, beganWithTone: { _ in
                         }))
                     }
                 }
@@ -2841,7 +2922,21 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
         }
     }
 
-    private func sendMessages(view: StoryItemSetContainerComponent.View, peer: EnginePeer, messages: [EnqueueMessage], silentPosting: Bool = false, scheduleTime: Int32? = nil) {
+    private func sendMessages(view: StoryItemSetContainerComponent.View, peer: EnginePeer, messages: [EnqueueMessage], silentPosting: Bool = false, scheduleTime: Int32? = nil, confirmed: Bool = false) {
+        var confirmed = confirmed
+        if self.bypassNextStoryReplyConfirmation {
+            self.bypassNextStoryReplyConfirmation = false
+            confirmed = true
+        }
+        if !confirmed {
+            self.performWithStoryReplyConfirmation(view: view, confirmed: false, action: { [weak self, weak view] in
+                guard let self, let view else {
+                    return
+                }
+                self.sendMessages(view: view, peer: peer, messages: messages, silentPosting: silentPosting, scheduleTime: scheduleTime, confirmed: true)
+            })
+            return
+        }
         guard let component = view.component else {
             return
         }
@@ -3798,19 +3893,23 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                 return
             }
 
-            self.performWithPossibleStealthModeConfirmation(view: view, action: { [weak view] in
-                guard let view, let component = view.component else {
+            self.performWithStoryReactionConfirmation(view: view, action: { [weak self, weak view] in
+                guard let self, let view else {
                     return
                 }
-                if component.slice.effectivePeer.id != component.context.account.peerId {
-                    let _ = component.context.engine.messages.setStoryReaction(peerId: component.slice.effectivePeer.id, id: component.slice.item.storyItem.id, reaction: reaction).start()
-                }
+                self.performWithPossibleStealthModeConfirmation(view: view, action: { [weak view] in
+                    guard let view, let component = view.component else {
+                        return
+                    }
+                    if component.slice.effectivePeer.id != component.context.account.peerId {
+                        let _ = component.context.engine.messages.setStoryReaction(peerId: component.slice.effectivePeer.id, id: component.slice.item.storyItem.id, reaction: reaction).start()
+                    }
 
-                let targetFrame = reactionView.convert(reactionView.bounds, to: view)
+                    let targetFrame = reactionView.convert(reactionView.bounds, to: view)
 
-                let targetView = UIView(frame: targetFrame)
-                targetView.isUserInteractionEnabled = false
-                view.addSubview(targetView)
+                    let targetView = UIView(frame: targetFrame)
+                    targetView.isUserInteractionEnabled = false
+                    view.addSubview(targetView)
 
                 let standaloneReactionAnimation = StandaloneReactionAnimation(genericReactionEffect: nil, useDirectRendering: false)
                 view.componentContainerView.addSubview(standaloneReactionAnimation.view)
@@ -3826,7 +3925,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                 view.standaloneReactionAnimation = standaloneReactionAnimation
 
                 standaloneReactionAnimation.frame = view.bounds
-                standaloneReactionAnimation.animateReactionSelection(
+                    standaloneReactionAnimation.animateReactionSelection(
                     context: component.context,
                     theme: component.theme,
                     animationCache: component.context.animationCache,
@@ -3854,7 +3953,8 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                         targetView?.removeFromSuperview()
                         standaloneReactionAnimation?.view.removeFromSuperview()
                     }
-                )
+                    )
+                })
             })
         }
 

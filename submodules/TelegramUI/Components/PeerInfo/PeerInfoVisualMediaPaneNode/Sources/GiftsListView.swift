@@ -68,6 +68,7 @@ final class GiftsListView: UIView {
     }
             
     private var starsProducts: [ProfileGiftsContext.State.StarGift]?
+    private var localGiftProducts: [(ProfileGiftsContext.State.StarGift, StuxnetLocalGift)] = []
     private var starsItems: [AnyHashable: (StarGiftReference?, ComponentView<Empty>)] = [:]
 
     private(set) var resultsAreEmpty = false
@@ -146,14 +147,31 @@ final class GiftsListView: UIView {
         self.dataDisposable = combineLatest(
             queue: Queue.mainQueue(),
             profileGifts.state,
-            self.reorderedReferencesPromise.get()
-        ).startStrict(next: { [weak self] state, reorderedReferences in
+            self.reorderedReferencesPromise.get(),
+            stuxnetSettings(postbox: context.account.postbox)
+        ).startStrict(next: { [weak self] state, reorderedReferences, stuxnetSettings in
             guard let self else {
                 return
             }
             let isFirstTime = self.starsProducts == nil
             let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
-            self.statusPromise.set(.single(PeerInfoStatusData(text: presentationData.strings.SharedMedia_GiftCount(state.count ?? 0), isActivity: true, key: .gifts)))
+            if self.profileGifts.collectionId == nil && !self.canSelect && stuxnetSettings.localProfileEffects {
+                self.localGiftProducts = stuxnetSettings.localGifts
+                    .filter {
+                        $0.isOwned(by: self.peerId, accountPeerId: self.context.account.peerId)
+                            && self.localGiftMatchesFilter($0, filter: state.filter)
+                    }
+                    .sorted { lhs, rhs in
+                        if lhs.equipped != rhs.equipped { return lhs.equipped }
+                        if lhs.pinned != rhs.pinned { return lhs.pinned }
+                        return lhs.createdAt > rhs.createdAt
+                    }
+                    .compactMap { gift in gift.profileGift.map { ($0, gift) } }
+            } else {
+                self.localGiftProducts = []
+            }
+            let effectiveGiftCount = (state.count ?? Int32(state.gifts.count)) + Int32(self.localGiftProducts.count)
+            self.statusPromise.set(.single(PeerInfoStatusData(text: presentationData.strings.SharedMedia_GiftCount(effectiveGiftCount), isActivity: true, key: .gifts)))
             
             if self.isReordering {
                 var stateItems: [ProfileGiftsContext.State.StarGift] = state.gifts
@@ -186,12 +204,26 @@ final class GiftsListView: UIView {
                 self.starsProducts = stateItems
                 self.pinnedReferences = Array(stateItems.filter { $0.pinnedToTop }.compactMap { $0.reference })
             } else {
-                self.starsProducts = state.filteredGifts
+                let localProducts = self.localGiftProducts.map { $0.0 }
+                if state.sorting == .date {
+                    self.starsProducts = (localProducts + state.filteredGifts).sorted { lhs, rhs in
+                        if lhs.pinnedToTop != rhs.pinnedToTop {
+                            return lhs.pinnedToTop
+                        }
+                        return lhs.date > rhs.date
+                    }
+                } else {
+                    let localPinned = localProducts.filter { $0.pinnedToTop }
+                    let localRegular = localProducts.filter { !$0.pinnedToTop }
+                    let serverPinned = state.filteredGifts.filter { $0.pinnedToTop }
+                    let serverRegular = state.filteredGifts.filter { !$0.pinnedToTop }
+                    self.starsProducts = localPinned + serverPinned + localRegular + serverRegular
+                }
                 self.pinnedReferences = Array(state.gifts.filter { $0.pinnedToTop }.compactMap { $0.reference })
             }
             
-            self.resultsAreEmpty = state.filter == .All && state.gifts.isEmpty && state.dataState != .loading
-            self.filteredResultsAreEmpty = state.filter != .All && state.filteredGifts.isEmpty
+            self.resultsAreEmpty = state.filter == .All && state.gifts.isEmpty && self.localGiftProducts.isEmpty && state.dataState != .loading
+            self.filteredResultsAreEmpty = state.filter != .All && state.filteredGifts.isEmpty && self.localGiftProducts.isEmpty
         
             if !self.didSetReady {
                 self.didSetReady = true
@@ -242,6 +274,28 @@ final class GiftsListView: UIView {
         self.reorderRecognizer = reorderRecognizer
         self.addGestureRecognizer(reorderRecognizer)
         reorderRecognizer.isEnabled = false
+    }
+
+    private func localGift(for product: ProfileGiftsContext.State.StarGift) -> StuxnetLocalGift? {
+        return self.localGiftProducts.first(where: { $0.0 == product })?.1
+    }
+
+    private func localGiftMatchesFilter(_ gift: StuxnetLocalGift, filter: ProfileGiftsContext.Filters) -> Bool {
+        guard gift.visible, filter.contains(.displayed), !filter.contains(.peerColor), let sourceGift = gift.sourceGift else {
+            return false
+        }
+        switch sourceGift {
+        case let .generic(value):
+            if value.availability == nil {
+                return filter.contains(.unlimited)
+            } else if value.upgradeStars != nil {
+                return filter.contains(.limitedUpgradable)
+            } else {
+                return filter.contains(.limitedNonUpgradable)
+            }
+        case .unique:
+            return filter.contains(.unique)
+        }
     }
     
     required init?(coder: NSCoder) {
@@ -449,6 +503,7 @@ final class GiftsListView: UIView {
         
         var index: Int32 = 0
         for product in starsProducts {
+            let localGift = self.localGift(for: product)
             var isVisible = false
             if visibleBounds.intersects(itemFrame) {
                 isVisible = true
@@ -462,7 +517,7 @@ final class GiftsListView: UIView {
                 case let .unique(gift):
                     info = "u_\(gift.id)"
                 }
-                let stableId = product.reference?.stringValue ?? "\(index)"
+                let stableId = localGift.map { "stuxnet_\($0.id)" } ?? product.reference?.stringValue ?? "\(index)"
                 let id = "\(stableId)_\(info)"
                 let itemId = AnyHashable(id)
                 validIds.append(itemId)
@@ -488,10 +543,18 @@ final class GiftsListView: UIView {
                 
                 switch product.gift {
                 case let .generic(gift):
-                    subject = .starGift(gift: gift, price: "# \(gift.price)")
-                    peer = product.fromPeer.flatMap { .peer($0) } ?? .anonymous
+                    if let localGift, !localGift.previewAttributes.isEmpty {
+                        subject = .preview(attributes: localGift.previewAttributes, rarity: nil)
+                        peer = nil
+                    } else {
+                        subject = .starGift(gift: gift, price: "# \(gift.price)")
+                        peer = product.fromPeer.flatMap { .peer($0) } ?? .anonymous
+                    }
                     
-                    if let availability = gift.availability {
+                    if let localGift, let number = localGift.number {
+                        ribbonText = "#\(number)"
+                        ribbonFont = .monospaced
+                    } else if let availability = gift.availability {
                         ribbonText = params.presentationData.strings.PeerInfo_Gifts_OneOf(compactNumericCountString(Int(availability.total), decimalSeparator: params.presentationData.dateTimeFormat.decimalSeparator)).string
                     } else {
                         ribbonText = nil
@@ -542,16 +605,23 @@ final class GiftsListView: UIView {
                             subject: subject,
                             ribbon: ribbonText.flatMap { GiftItemComponent.Ribbon(text: $0, font: ribbonFont, color: ribbonColor, outline: ribbonOutline) },
                             resellPrice: resellAmount?.amount.value,
-                            isHidden: !product.savedToProfile,
+                            isHidden: localGift == nil && !product.savedToProfile,
                             isSelected: self.selectedItemIds.contains(itemReferenceId),
                             isPinned: !self.canSelect && product.pinnedToTop,
-                            isEditing: self.isReordering && !self.isCollection,
+                            isEditing: self.isReordering && !self.isCollection && localGift == nil,
                             mode: self.canSelect && !isAdded ? .select : .profile,
                             action: { [weak self] in
                                 guard let self, !isAdded, let presentationData = self.currentParams?.presentationData else {
                                     return
                                 }
-                                if self.canSelect {
+                                if let localGift, let sourceGift = localGift.effectiveSourceGift {
+                                    let controller = GiftViewScreen(
+                                        context: self.context,
+                                        subject: .wearPreview(sourceGift, localGift.previewAttributes.isEmpty ? nil : localGift.previewAttributes),
+                                        customAction: GiftViewScreen.CustomAction(title: presentationData.strings.Common_Done, action: {})
+                                    )
+                                    self.parentController?.push(controller)
+                                } else if self.canSelect {
                                     if self.selectedItemIds.contains(itemReferenceId) {
                                         self.selectedItemIds.remove(itemReferenceId)
                                     } else {
@@ -686,7 +756,7 @@ final class GiftsListView: UIView {
                                     self.parentController?.push(controller)
                                 }
                             },
-                            contextAction: self.isReordering || self.canSelect ? nil : { [weak self] view, gesture in
+                            contextAction: self.isReordering || self.canSelect || localGift != nil ? nil : { [weak self] view, gesture in
                                 guard let self else {
                                     return
                                 }

@@ -704,6 +704,22 @@ private struct NotificationContent: CustomStringConvertible {
     }
 }
 
+@available(iOSApplicationExtension 10.0, iOS 10.0, *)
+private func applyStuxnetChatLock(to content: inout NotificationContent, transaction: Transaction, peerId: PeerId) {
+    guard stuxnetSettings(transaction: transaction).isChatLocked(peerId) else {
+        return
+    }
+    content.title = "Stuxnet"
+    content.subtitle = nil
+    content.body = "Locked chat"
+    content.isLockedMessage = "Locked chat"
+    content.customEmoji = []
+    content.resolvedEmojiFiles = [:]
+    content.attachments = []
+    content.senderPerson = nil
+    content.senderImage = nil
+}
+
 private func getCurrentRenderedTotalUnreadCount(accountManager: AccountManager<TelegramAccountManagerTypes>, postbox: Postbox) -> Signal<(Int32, RenderedTotalUnreadCountType), NoError> {
     let counters = postbox.transaction { transaction -> ChatListTotalUnreadState in
         return transaction.getTotalUnreadState(groupId: .root)
@@ -1299,7 +1315,15 @@ private final class NotificationServiceHandler {
                                 action = .poll(peerId: peerId, content: content, messageId: messageIdValue, reportDelivery: reportDelivery, enableInlineEmoji: enableInlineEmoji)
                             }
                             
-                            updateCurrentContent(content)
+                            let fallbackContent = content
+                            let _ = (stateManager.postbox.transaction { transaction -> NotificationContent in
+                                var content = fallbackContent
+                                applyStuxnetChatLock(to: &content, transaction: transaction, peerId: peerId)
+                                return content
+                            }
+                            |> deliverOn(strongSelf.queue)).start(next: { content in
+                                updateCurrentContent(content)
+                            })
                         } else if let aps = payloadJson["aps"] as? [String: Any], let url = payloadJson["url"] as? String {
                             var content: NotificationContent = NotificationContent(isLockedMessage: nil)
                             content.userInfo["url"] = url
@@ -1448,7 +1472,7 @@ private final class NotificationServiceHandler {
                                             return
                                         }
                                         
-                                        let mediaAttachment = mediaAttachment ?? customMedia
+                                        let mediaAttachment = content.isLockedMessage == nil ? (mediaAttachment ?? customMedia) : nil
 
                                         var fetchMediaSignal: Signal<Data?, NoError> = .single(nil)
                                         if let mediaAttachment {
@@ -1944,8 +1968,10 @@ private final class NotificationServiceHandler {
                                 if interactionAuthorId != nil || messageId != nil {
                                     pollWithUpdatedContent = stateManager.postbox.transaction { transaction -> (NotificationContent, Media?) in
                                         var content = initialContent
-                                        
-                                        if let interactionAuthorId = interactionAuthorId {
+
+                                        applyStuxnetChatLock(to: &content, transaction: transaction, peerId: peerId)
+
+                                        if content.isLockedMessage == nil, let interactionAuthorId = interactionAuthorId {
                                             if inAppNotificationSettings.displayNameOnLockscreen, var peer = transaction.getPeer(interactionAuthorId) {
                                                 if let channel = peer as? TelegramChannel, channel.isMonoForum, let linkedMonoforumId = channel.linkedMonoforumId, let mainChannel = transaction.getPeer(linkedMonoforumId) {
                                                     peer = mainChannel
@@ -2001,9 +2027,11 @@ private final class NotificationServiceHandler {
                                     |> mapToSignal { content, _ -> Signal<(NotificationContent, Media?), NoError> in
                                         return stateManager.postbox.transaction { transaction -> (NotificationContent, Media?) in
                                             var content = content
-                                            
+
+                                            applyStuxnetChatLock(to: &content, transaction: transaction, peerId: peerId)
+
                                             var parsedMedia: Media?
-                                            if let messageId, let message = transaction.getMessage(messageId), !message.containsSecretMedia, !message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute }) {
+                                            if content.isLockedMessage == nil, let messageId, let message = transaction.getMessage(messageId), !message.containsSecretMedia, !message.attributes.contains(where: { $0 is MediaSpoilerMessageAttribute }) {
                                                 if let media = message.media.first {
                                                     parsedMedia = media
                                                 }
@@ -2285,8 +2313,10 @@ private final class NotificationServiceHandler {
                                 if interactionAuthorId != nil || messageId != nil {
                                     pollWithUpdatedContent = stateManager.postbox.transaction { transaction -> NotificationContent in
                                         var content = initialContent
-                                        
-                                        if let interactionAuthorId = interactionAuthorId {
+
+                                        applyStuxnetChatLock(to: &content, transaction: transaction, peerId: peerId)
+
+                                        if content.isLockedMessage == nil, let interactionAuthorId = interactionAuthorId {
                                             if inAppNotificationSettings.displayNameOnLockscreen, var peer = transaction.getPeer(interactionAuthorId) {
                                                 if let channel = peer as? TelegramChannel, channel.isMonoForum, let linkedMonoforumId = channel.linkedMonoforumId, let mainChannel = transaction.getPeer(linkedMonoforumId) {
                                                     peer = mainChannel

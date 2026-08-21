@@ -127,6 +127,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Settings/PeerNameColorItem",
         "//submodules/TelegramUI/Components/Settings/PasskeysScreen",
         "//submodules/TelegramUI/Components/FaceScanScreen",
+        "//submodules/TelegramUI/Components/Gifts/GiftViewScreen",
         "//submodules/ComponentFlow",
         "//submodules/Components/ResizableSheetComponent",
         "//submodules/Components/ComponentDisplayAdapters",

@@ -462,6 +462,7 @@ public final class MediaManagerImpl: NSObject, MediaManager {
     public func audioRecorder(
         resumeData: AudioRecorderResumeData?,
         beginWithTone: Bool,
+        voiceLabConfiguration: VoiceLabConfiguration,
         applicationBindings: TelegramApplicationBindings,
         beganWithTone: @escaping (Bool) -> Void
     ) -> Signal<ManagedAudioRecorder?, NoError> {
@@ -471,7 +472,7 @@ public final class MediaManagerImpl: NSObject, MediaManager {
             self.queue.async {
                 let audioRecorder = ManagedAudioRecorderImpl(mediaManager: self, resumeData: resumeData, pushIdleTimerExtension: { [weak applicationBindings] in
                     return applicationBindings?.pushIdleTimerExtension() ?? EmptyDisposable
-                }, beginWithTone: beginWithTone, beganWithTone: beganWithTone)
+                }, beginWithTone: beginWithTone, voiceLabConfiguration: voiceLabConfiguration, beganWithTone: beganWithTone)
                 subscriber.putNext(audioRecorder)
                 
                 disposable.set(ActionDisposable {

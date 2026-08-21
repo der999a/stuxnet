@@ -200,6 +200,26 @@ public struct AudioRecorderResumeData {
     }
 }
 
+public struct VoiceLabConfiguration: Equatable {
+    public let isEnabled: Bool
+    public let preset: String
+    public let pitchSemitones: Float
+    public let tone: Float
+    public let robotMix: Float
+    public let gainDb: Float
+
+    public static let disabled = VoiceLabConfiguration(isEnabled: false, preset: "Natural", pitchSemitones: 0.0, tone: 0.0, robotMix: 0.0, gainDb: 0.0)
+
+    public init(isEnabled: Bool, preset: String, pitchSemitones: Float, tone: Float, robotMix: Float, gainDb: Float) {
+        self.isEnabled = isEnabled
+        self.preset = String(preset.prefix(48))
+        self.pitchSemitones = min(12.0, max(-12.0, pitchSemitones))
+        self.tone = min(1.0, max(-1.0, tone))
+        self.robotMix = min(1.0, max(0.0, robotMix))
+        self.gainDb = min(12.0, max(-12.0, gainDb))
+    }
+}
+
 public protocol MediaManager: AnyObject {
     var audioSession: ManagedAudioSession { get }
     var galleryHiddenMediaManager: GalleryHiddenMediaManager { get }
@@ -224,6 +244,7 @@ public protocol MediaManager: AnyObject {
     func audioRecorder(
         resumeData: AudioRecorderResumeData?,
         beginWithTone: Bool,
+        voiceLabConfiguration: VoiceLabConfiguration,
         applicationBindings: TelegramApplicationBindings,
         beganWithTone: @escaping (Bool) -> Void
     ) -> Signal<ManagedAudioRecorder?, NoError>

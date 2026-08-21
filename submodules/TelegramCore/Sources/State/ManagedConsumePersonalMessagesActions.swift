@@ -252,6 +252,21 @@ func managedReadReactionOrPollVoteActions(postbox: Postbox, network: Network, st
 }
 
 private func synchronizeConsumeMessageContents(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
+    if !stuxnetSettings(transaction: transaction).sendReadMessages {
+        transaction.updateMessage(id, update: { currentMessage in
+            var attributes = currentMessage.attributes
+            for i in 0 ..< attributes.count {
+                if let attribute = attributes[i] as? ConsumablePersonalMentionMessageAttribute, !attribute.consumed || attribute.pending {
+                    attributes[i] = ConsumablePersonalMentionMessageAttribute(consumed: true, pending: false)
+                    break
+                }
+            }
+            var tags = currentMessage.tags
+            tags.remove(.unseenPersonalMessage)
+            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+        })
+        return .complete()
+    }
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
         return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
             |> map(Optional.init)
@@ -321,6 +336,28 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
 }
 
 private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
+    if !stuxnetSettings(transaction: transaction).sendReadMessages {
+        transaction.updateMessage(id, update: { currentMessage in
+            var attributes = currentMessage.attributes
+            for i in 0 ..< attributes.count {
+                if let attribute = attributes[i] as? ReactionsMessageAttribute, attribute.hasUnseen {
+                    attributes[i] = attribute.withAllSeen()
+                    break
+                }
+            }
+            var media = currentMessage.media
+            for i in 0 ..< media.count {
+                if let poll = media[i] as? TelegramMediaPoll {
+                    media[i] = poll.withoutUnreadResults()
+                }
+            }
+            var tags = currentMessage.tags
+            tags.remove(.unseenReaction)
+            tags.remove(.unseenPollVote)
+            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init), authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: media))
+        })
+        return .complete()
+    }
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
         return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
         |> map(Optional.init)

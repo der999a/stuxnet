@@ -1969,6 +1969,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if isAd {
             needsShareButton = true
         }
+        if !isAd && item.context.currentStuxnetSettings.with({ $0.hideFastShareButton }) {
+            needsShareButton = false
+        }
         for attribute in item.content.firstMessage.attributes {
             if let attribute = attribute as? RestrictedContentMessageAttribute, attribute.platformText(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) != nil {
                 needsShareButton = false
@@ -3928,6 +3931,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
         
         strongSelf.appliedItem = item
+        let dimDeletedMessage = item.message.stuxnetIsDeleted && item.context.currentStuxnetSettings.with { $0.dimDeletedMessages }
+        strongSelf.mainContextSourceNode.contentNode.alpha = dimDeletedMessage ? 0.58 : 1.0
         strongSelf.appliedForwardInfo = (forwardSource, forwardAuthorSignature)
         strongSelf.updateAccessibilityData(accessibilityData)
         strongSelf.disablesComments = disablesComments

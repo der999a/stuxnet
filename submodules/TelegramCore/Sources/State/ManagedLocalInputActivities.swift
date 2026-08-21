@@ -141,8 +141,39 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
     }
 }
 
+private func isUploadActivity(_ activity: PeerInputActivity?) -> Bool {
+    guard let activity else {
+        return false
+    }
+    switch activity {
+    case .uploadingFile, .uploadingPhoto, .uploadingVideo, .uploadingInstantVideo:
+        return true
+    default:
+        return false
+    }
+}
+
+private func isStuxnetHiddenActivity(_ activity: PeerInputActivity?) -> Bool {
+    guard let activity else {
+        return false
+    }
+    switch activity {
+    case .typingText, .recordingVoice, .recordingInstantVideo, .choosingSticker, .playingGame, .interactingWithEmoji, .seeingEmojiInteraction:
+        return true
+    case .uploadingFile, .uploadingPhoto, .uploadingVideo, .uploadingInstantVideo, .speakingInGroupCall:
+        return false
+    }
+}
+
 private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Signal<Void, NoError> in
+        let settings = stuxnetSettings(transaction: transaction)
+        if settings.hideTypingActivity, isStuxnetHiddenActivity(activity) {
+            return .complete()
+        }
+        if !settings.sendUploadProgress, isUploadActivity(activity) {
+            return .complete()
+        }
         if let peer = transaction.getPeer(peerId) {
             if peerId == accountPeerId {
                 return .complete()

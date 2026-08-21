@@ -146,6 +146,29 @@ import GlobalControlPanelsContext
 import ChatSearchNavigationContentNode
 import ChatAgeRestrictionAlertController
 import TextProcessingScreen
+import LocalAuth
+
+private func stuxnetChatBubbleCorners(settings: StuxnetSettings, fallback: PresentationChatBubbleCorners) -> PresentationChatBubbleCorners {
+    let mainRadius: CGFloat
+    let auxiliaryRadius: CGFloat
+    if let customRadius = settings.customMessageBubbleRadius {
+        mainRadius = CGFloat(max(8, min(16, customRadius)))
+        auxiliaryRadius = min(fallback.auxiliaryRadius, max(4.0, mainRadius * 0.5))
+    } else {
+        mainRadius = fallback.mainRadius
+        auxiliaryRadius = fallback.auxiliaryRadius
+    }
+    return PresentationChatBubbleCorners(
+        mainRadius: mainRadius,
+        auxiliaryRadius: auxiliaryRadius,
+        mergeBubbleCorners: fallback.mergeBubbleCorners,
+        hasTails: !settings.removeMessageTails
+    )
+}
+
+private func stuxnetChatBubbleCorners(context: AccountContext, fallback: PresentationChatBubbleCorners) -> PresentationChatBubbleCorners {
+    return stuxnetChatBubbleCorners(settings: context.currentStuxnetSettings.with { $0 }, fallback: fallback)
+}
 
 public final class ChatControllerOverlayPresentationData {
     public let expandData: (ASDisplayNode?, () -> Void)
@@ -436,6 +459,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         return (self.presentationData, self.presentationDataPromise.get())
     }
     var presentationDataDisposable: Disposable?
+    var stuxnetSettingsDisposable: Disposable?
+    private let stuxnetChatLockReadAccess: ValuePromise<Bool>
+    private let stuxnetChatLockAuthDisposable = MetaDisposable()
+    private var stuxnetChatLockApplicationIsActiveDisposable: Disposable?
+    private var stuxnetChatLockOverlayView: UIView?
+    private weak var stuxnetChatLockButton: UIButton?
+    private weak var stuxnetChatLockSubtitleLabel: UILabel?
+    private var stuxnetChatLockPeerId: PeerId?
+    private var stuxnetChatLockUnlocked = false
+    private var stuxnetChatLockAuthenticationInProgress = false
     var forcedTheme: PresentationTheme?
     var forcedNavigationBarTheme: PresentationTheme?
     var forcedWallpaper: TelegramWallpaper?
@@ -678,6 +711,13 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.currentChatListFilter = chatListFilter
         self.chatNavigationStack = chatNavigationStack
         self.customChatNavigationStack = customChatNavigationStack
+
+        let initialStuxnetSettings = context.currentStuxnetSettings.with { $0 }
+        let initialStuxnetChatLocked = chatLocation.peerId.flatMap { peerId in
+            initialStuxnetSettings.isChatLocked(peerId) ? peerId : nil
+        }
+        self.stuxnetChatLockReadAccess = ValuePromise<Bool>(initialStuxnetChatLocked == nil, ignoreRepeated: true)
+        self.stuxnetChatLockPeerId = initialStuxnetChatLocked
         
         self.forcedTheme = params?.forcedTheme
         self.forcedNavigationBarTheme = params?.forcedNavigationBarTheme
@@ -706,7 +746,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         
         self.stickerSettings = ChatInterfaceStickerSettings()
         
-        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: self.presentationData.chatWallpaper, theme: self.presentationData.theme, preferredGlassType: .default, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: self.presentationData.chatBubbleCorners, accountPeerId: context.account.peerId, mode: mode, chatLocation: chatLocation, subject: subject, greetingData: context.prefetchManager?.preloadedGreetingSticker, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, threadData: nil, isGeneralThreadClosed: nil, replyMessage: nil, accountPeerColor: nil, businessIntro: nil)
+        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: self.presentationData.chatWallpaper, theme: self.presentationData.theme, preferredGlassType: .default, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: stuxnetChatBubbleCorners(context: context, fallback: self.presentationData.chatBubbleCorners), accountPeerId: context.account.peerId, mode: mode, chatLocation: chatLocation, subject: subject, greetingData: context.prefetchManager?.preloadedGreetingSticker, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, threadData: nil, isGeneralThreadClosed: nil, replyMessage: nil, accountPeerColor: nil, businessIntro: nil)
         
         if case let .customChatContents(customChatContents) = subject {
             switch customChatContents.kind {
@@ -5324,39 +5364,62 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 guard let self else {
                     return
                 }
-                let presentationData = self.presentationData
-                self.joinChannelDisposable.set((
-                    self.context.peerChannelMemberCategoriesContextsManager.join(engine: self.context.engine, peerId: peer.id, hash: nil)
-                    |> deliverOnMainQueue
-                ).startStrict(next: { [weak self] result in
+                let join: () -> Void = { [weak self] in
                     guard let self else {
                         return
                     }
-                    switch result {
-                    case .joined:
-                        self.present(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.Chat_SimilarChannels_JoinedChannel(peer.compactDisplayTitle).string, timeout: nil, customUndoText: nil), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in return false }), in: .current)
-                    case let .webView(webView):
-                        self.context.sharedContext.openJoinChatWebView(context: self.context, parentController: self, updatedPresentationData: self.updatedPresentationData, webView: webView, chatTitle: peer.compactDisplayTitle)
-                    }
-                }, error: { [weak self] error in
-                    guard let self else {
-                        return
-                    }
-                    let text: String
-                    switch error {
-                    case .inviteRequestSent:
-                        self.present(UndoOverlayController(presentationData: presentationData, content: .inviteRequestSent(title: presentationData.strings.Group_RequestToJoinSent, text: presentationData.strings.Group_RequestToJoinSentDescriptionGroup), elevatedLayout: true, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
-                        return
-                    case .tooMuchJoined:
-                        self.push(oldChannelsController(context: context, intent: .join))
-                        return
-                    case .tooMuchUsers:
-                        text = self.presentationData.strings.Conversation_UsersTooMuchError
-                    case .generic:
-                        text = self.presentationData.strings.Channel_ErrorAccessDenied
-                    }
-                    self.present(textAlertController(context: context, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
-                }))
+                    let presentationData = self.presentationData
+                    self.joinChannelDisposable.set((
+                        self.context.peerChannelMemberCategoriesContextsManager.join(engine: self.context.engine, peerId: peer.id, hash: nil)
+                        |> deliverOnMainQueue
+                    ).startStrict(next: { [weak self] result in
+                        guard let self else {
+                            return
+                        }
+                        switch result {
+                        case .joined:
+                            self.present(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.Chat_SimilarChannels_JoinedChannel(peer.compactDisplayTitle).string, timeout: nil, customUndoText: nil), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+                        case let .webView(webView):
+                            self.context.sharedContext.openJoinChatWebView(context: self.context, parentController: self, updatedPresentationData: self.updatedPresentationData, webView: webView, chatTitle: peer.compactDisplayTitle)
+                        }
+                    }, error: { [weak self] error in
+                        guard let self else {
+                            return
+                        }
+                        let text: String
+                        switch error {
+                        case .inviteRequestSent:
+                            self.present(UndoOverlayController(presentationData: presentationData, content: .inviteRequestSent(title: presentationData.strings.Group_RequestToJoinSent, text: presentationData.strings.Group_RequestToJoinSentDescriptionGroup), elevatedLayout: true, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                            return
+                        case .tooMuchJoined:
+                            self.push(oldChannelsController(context: context, intent: .join))
+                            return
+                        case .tooMuchUsers:
+                            text = self.presentationData.strings.Conversation_UsersTooMuchError
+                        case .generic:
+                            text = self.presentationData.strings.Channel_ErrorAccessDenied
+                        }
+                        self.present(textAlertController(context: context, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                    }))
+                }
+
+                if case let .channel(channel) = peer,
+                   case .broadcast = channel.info,
+                   self.context.currentStuxnetSettings.with({ $0.confirmChannelSubscriptions }) {
+                    let presentationData = self.presentationData
+                    self.present(textAlertController(
+                        context: self.context,
+                        updatedPresentationData: self.updatedPresentationData,
+                        title: presentationData.strings.Channel_JoinChannel,
+                        text: "Subscribe to \(peer.compactDisplayTitle)?",
+                        actions: [
+                            TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Channel_JoinChannel, action: join)
+                        ]
+                    ), in: .window(.root))
+                } else {
+                    join()
+                }
             })))
                       
             self.chatDisplayNode.messageTransitionNode.dismissMessageReactionContexts()
@@ -6815,6 +6878,20 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 strongSelf.presentationReady.set(.single(true))
             }
         })
+
+        self.stuxnetSettingsDisposable = (stuxnetSettings(postbox: context.account.postbox)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] settings in
+            guard let strongSelf = self else {
+                return
+            }
+            let corners = stuxnetChatBubbleCorners(settings: settings, fallback: strongSelf.presentationData.chatBubbleCorners)
+            if strongSelf.presentationInterfaceState.bubbleCorners != corners {
+                strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, { state in
+                    return state.updatedBubbleCorners(corners)
+                })
+            }
+            strongSelf.stuxnetUpdateChatLock(settings: settings, requestAuthentication: strongSelf.didAppear)
+        })
         
         self.automaticMediaDownloadSettingsDisposable = (context.sharedContext.automaticMediaDownloadSettings
         |> deliverOnMainQueue).startStrict(next: { [weak self] downloadSettings in
@@ -6871,6 +6948,14 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 wasInForeground = value
             }
         })
+
+        self.stuxnetChatLockApplicationIsActiveDisposable = (context.sharedContext.applicationBindings.applicationIsActive
+        |> distinctUntilChanged
+        |> deliverOn(Queue.mainQueue())).startStrict(next: { [weak self] value in
+            if !value {
+                self?.stuxnetRelockChatIfNeeded()
+            }
+        })
         
         if case let .peer(peerId) = chatLocation, peerId.namespace == Namespaces.Peer.SecretChat {
             self.applicationInFocusDisposable = (context.sharedContext.applicationBindings.applicationIsActive
@@ -6888,9 +6973,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.canReadHistoryDisposable = (combineLatest(
             context.sharedContext.applicationBindings.applicationInForeground,
             self.canReadHistory.get(),
-            self.hasBrowserOrAppInFront.get()
-        ) |> map { inForeground, globallyEnabled, hasBrowserOrWebAppInFront in
-            return inForeground && globallyEnabled && !hasBrowserOrWebAppInFront
+            self.hasBrowserOrAppInFront.get(),
+            self.stuxnetChatLockReadAccess.get()
+        ) |> map { inForeground, globallyEnabled, hasBrowserOrWebAppInFront, stuxnetChatUnlocked in
+            return inForeground && globallyEnabled && !hasBrowserOrWebAppInFront && stuxnetChatUnlocked
         } |> deliverOnMainQueue).startStrict(next: { [weak self] value in
             if let strongSelf = self, strongSelf.canReadHistoryValue != value {
                 strongSelf.canReadHistoryValue = value
@@ -7013,6 +7099,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.recordingActivityDisposable?.dispose()
         self.acquiredRecordingActivityDisposable?.dispose()
         self.presentationDataDisposable?.dispose()
+        self.stuxnetSettingsDisposable?.dispose()
+        self.stuxnetChatLockAuthDisposable.dispose()
+        self.stuxnetChatLockApplicationIsActiveDisposable?.dispose()
         self.searchDisposable?.dispose()
         self.applicationInForegroundDisposable?.dispose()
         self.applicationInFocusDisposable?.dispose()
@@ -7181,7 +7270,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             state = state.updatedStrings(self.presentationData.strings)
             state = state.updatedDateTimeFormat(self.presentationData.dateTimeFormat)
             state = state.updatedChatWallpaper(self.presentationData.chatWallpaper)
-            state = state.updatedBubbleCorners(self.presentationData.chatBubbleCorners)
+            state = state.updatedBubbleCorners(stuxnetChatBubbleCorners(context: self.context, fallback: self.presentationData.chatBubbleCorners))
             return state
         })
         
@@ -7550,9 +7639,230 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     func animateFromPreviousController(snapshotState: ChatControllerNode.SnapshotState) {
         self.storedAnimateFromSnapshotState = snapshotState
     }
+
+    private var stuxnetShouldAutomaticallyAuthenticateChat: Bool {
+        if case .standard(.previewing) = self.mode {
+            return false
+        }
+        return true
+    }
+
+    private func stuxnetBiometricTitle() -> String? {
+        guard let biometricAuthentication = LocalAuth.biometricAuthentication else {
+            return nil
+        }
+        switch biometricAuthentication {
+        case .faceId:
+            return "Face ID"
+        case .touchId:
+            return "Touch ID"
+        }
+    }
+
+    private func stuxnetUpdateChatLock(settings: StuxnetSettings, requestAuthentication: Bool) {
+        guard let peerId = self.chatLocation.peerId, settings.isChatLocked(peerId) else {
+            self.stuxnetChatLockAuthDisposable.set(nil)
+            self.stuxnetChatLockAuthenticationInProgress = false
+            self.stuxnetChatLockPeerId = nil
+            self.stuxnetChatLockUnlocked = false
+            self.stuxnetChatLockReadAccess.set(true)
+            self.stuxnetRemoveChatLockOverlay(animated: false)
+            return
+        }
+
+        if self.stuxnetChatLockPeerId != peerId {
+            self.stuxnetChatLockAuthDisposable.set(nil)
+            self.stuxnetChatLockAuthenticationInProgress = false
+            self.stuxnetChatLockPeerId = peerId
+            self.stuxnetChatLockUnlocked = false
+        }
+
+        if self.stuxnetChatLockUnlocked {
+            self.stuxnetChatLockReadAccess.set(true)
+            self.stuxnetRemoveChatLockOverlay(animated: false)
+        } else {
+            self.stuxnetChatLockReadAccess.set(false)
+            if self.isNodeLoaded {
+                self.stuxnetEnsureChatLockOverlay()
+            }
+            if requestAuthentication && self.stuxnetShouldAutomaticallyAuthenticateChat {
+                self.stuxnetRequestChatUnlock()
+            }
+        }
+    }
+
+    private func stuxnetEnsureChatLockOverlay() {
+        if let overlayView = self.stuxnetChatLockOverlayView {
+            overlayView.alpha = 1.0
+            self.view.bringSubviewToFront(overlayView)
+            self.stuxnetUpdateChatLockOverlayState()
+            return
+        }
+
+        let theme = self.presentationData.theme
+        let overlayView = UIView()
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        overlayView.backgroundColor = theme.chatList.backgroundColor
+        overlayView.isOpaque = true
+        overlayView.accessibilityViewIsModal = true
+
+        let iconView = UIImageView(image: UIImage(systemName: "lock.fill"))
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.tintColor = theme.list.itemAccentColor
+        iconView.contentMode = .scaleAspectFit
+        iconView.isAccessibilityElement = false
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Locked chat"
+        titleLabel.textAlignment = .center
+        titleLabel.textColor = theme.list.itemPrimaryTextColor
+        titleLabel.font = UIFont.systemFont(ofSize: 24.0, weight: .semibold)
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.textAlignment = .center
+        subtitleLabel.textColor = theme.list.itemSecondaryTextColor
+        subtitleLabel.font = UIFont.systemFont(ofSize: 15.0, weight: .regular)
+        subtitleLabel.numberOfLines = 0
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+
+        let unlockButton = UIButton(type: .system)
+        unlockButton.setTitleColor(.white, for: .normal)
+        unlockButton.setTitleColor(UIColor.white.withAlphaComponent(0.65), for: .disabled)
+        unlockButton.titleLabel?.font = UIFont.systemFont(ofSize: 17.0, weight: .semibold)
+        unlockButton.backgroundColor = theme.list.itemAccentColor
+        unlockButton.layer.cornerRadius = 12.0
+        unlockButton.layer.masksToBounds = true
+        unlockButton.addTarget(self, action: #selector(self.stuxnetChatUnlockPressed), for: .touchUpInside)
+
+        let stackView = UIStackView(arrangedSubviews: [iconView, titleLabel, subtitleLabel, unlockButton])
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .vertical
+        stackView.alignment = .fill
+        stackView.spacing = 14.0
+        stackView.setCustomSpacing(20.0, after: subtitleLabel)
+
+        overlayView.addSubview(stackView)
+        self.view.addSubview(overlayView)
+
+        NSLayoutConstraint.activate([
+            overlayView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: self.view.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
+            stackView.centerXAnchor.constraint(equalTo: overlayView.centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: overlayView.centerYAnchor, constant: -16.0),
+            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: overlayView.leadingAnchor, constant: 32.0),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: overlayView.trailingAnchor, constant: -32.0),
+            stackView.widthAnchor.constraint(lessThanOrEqualToConstant: 340.0),
+            iconView.heightAnchor.constraint(equalToConstant: 42.0),
+            unlockButton.heightAnchor.constraint(equalToConstant: 48.0)
+        ])
+
+        self.stuxnetChatLockOverlayView = overlayView
+        self.stuxnetChatLockButton = unlockButton
+        self.stuxnetChatLockSubtitleLabel = subtitleLabel
+        self.stuxnetUpdateChatLockOverlayState()
+        self.view.layoutIfNeeded()
+    }
+
+    private func stuxnetUpdateChatLockOverlayState(message: String? = nil) {
+        guard let button = self.stuxnetChatLockButton, let subtitleLabel = self.stuxnetChatLockSubtitleLabel else {
+            return
+        }
+        if self.stuxnetChatLockAuthenticationInProgress {
+            subtitleLabel.text = "Confirm your identity to view messages and media."
+            button.setTitle("Authenticating…", for: .normal)
+            button.isEnabled = false
+        } else if let biometricTitle = self.stuxnetBiometricTitle() {
+            subtitleLabel.text = message ?? "Messages, media previews and read access stay hidden until you authenticate."
+            button.setTitle("Unlock with \(biometricTitle)", for: .normal)
+            button.isEnabled = true
+            button.accessibilityHint = "Authenticates locally on this device"
+        } else {
+            subtitleLabel.text = "Face ID or Touch ID is not available. Enable biometrics in iOS to open this protected chat."
+            button.setTitle("Biometrics unavailable", for: .normal)
+            button.isEnabled = false
+        }
+    }
+
+    @objc private func stuxnetChatUnlockPressed() {
+        self.stuxnetRequestChatUnlock()
+    }
+
+    private func stuxnetRequestChatUnlock() {
+        guard !self.stuxnetChatLockUnlocked, !self.stuxnetChatLockAuthenticationInProgress else {
+            return
+        }
+        guard let peerId = self.stuxnetChatLockPeerId, self.context.currentStuxnetSettings.with({ $0.isChatLocked(peerId) }) else {
+            return
+        }
+        guard let biometricTitle = self.stuxnetBiometricTitle() else {
+            self.stuxnetEnsureChatLockOverlay()
+            self.stuxnetUpdateChatLockOverlayState()
+            return
+        }
+
+        self.stuxnetChatLockAuthenticationInProgress = true
+        self.stuxnetEnsureChatLockOverlay()
+        self.stuxnetUpdateChatLockOverlayState()
+        let reason = "Unlock this chat with \(biometricTitle)"
+        self.stuxnetChatLockAuthDisposable.set((LocalAuth.auth(reason: reason)
+        |> deliverOnMainQueue).start(next: { [weak self] authenticated, _ in
+            guard let self else {
+                return
+            }
+            self.stuxnetChatLockAuthenticationInProgress = false
+            guard authenticated else {
+                self.stuxnetUpdateChatLockOverlayState(message: "Authentication was cancelled. Messages remain protected.")
+                return
+            }
+            guard self.stuxnetChatLockPeerId == peerId, self.context.currentStuxnetSettings.with({ $0.isChatLocked(peerId) }) else {
+                self.stuxnetUpdateChatLock(settings: self.context.currentStuxnetSettings.with { $0 }, requestAuthentication: false)
+                return
+            }
+            self.stuxnetChatLockUnlocked = true
+            self.stuxnetChatLockReadAccess.set(true)
+            self.stuxnetRemoveChatLockOverlay(animated: true)
+        }))
+    }
+
+    private func stuxnetRemoveChatLockOverlay(animated: Bool) {
+        guard let overlayView = self.stuxnetChatLockOverlayView else {
+            return
+        }
+        self.stuxnetChatLockOverlayView = nil
+        self.stuxnetChatLockButton = nil
+        self.stuxnetChatLockSubtitleLabel = nil
+        if animated {
+            UIView.animate(withDuration: 0.2, animations: {
+                overlayView.alpha = 0.0
+            }, completion: { _ in
+                overlayView.removeFromSuperview()
+            })
+        } else {
+            overlayView.removeFromSuperview()
+        }
+    }
+
+    private func stuxnetRelockChatIfNeeded() {
+        guard let peerId = self.chatLocation.peerId, self.context.currentStuxnetSettings.with({ $0.isChatLocked(peerId) }) else {
+            return
+        }
+        if !self.stuxnetChatLockAuthenticationInProgress {
+            self.stuxnetChatLockAuthDisposable.set(nil)
+        }
+        self.stuxnetChatLockPeerId = peerId
+        self.stuxnetChatLockUnlocked = false
+        self.stuxnetChatLockReadAccess.set(false)
+        if self.isNodeLoaded {
+            self.stuxnetEnsureChatLockOverlay()
+        }
+    }
     
     override public func loadDisplayNode() {
         self.loadDisplayNodeImpl()
+        self.stuxnetUpdateChatLock(settings: self.context.currentStuxnetSettings.with { $0 }, requestAuthentication: false)
         self.galleryPresentationContext.view = self.view
         self.galleryPresentationContext.controllersUpdated = { [weak self] _ in
             guard let self else {
@@ -7564,6 +7874,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     
     override public func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        self.stuxnetUpdateChatLock(settings: self.context.currentStuxnetSettings.with { $0 }, requestAuthentication: false)
                 
         if self.willAppear {
             self.chatDisplayNode.historyNode.refreshPollActionsForVisibleMessages()
@@ -7670,6 +7981,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         super.viewDidAppear(animated)
         
         self.didAppear = true
+        self.stuxnetUpdateChatLock(settings: self.context.currentStuxnetSettings.with { $0 }, requestAuthentication: true)
         
         self.chatDisplayNode.historyNode.experimentalSnapScrollToItem = false
         self.chatDisplayNode.historyNode.canReadHistory.set(self.computedCanReadHistoryPromise.get())
@@ -8143,6 +8455,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
     
     override public func viewWillDisappear(_ animated: Bool) {
+        self.stuxnetChatLockAuthDisposable.set(nil)
+        self.stuxnetChatLockAuthenticationInProgress = false
+        self.stuxnetRelockChatIfNeeded()
         super.viewWillDisappear(animated)
         
         if #available(iOS 18.0, *) {
@@ -8974,7 +9289,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         return .single(false)
     }
     
-    func sendMessages(_ messages: [EnqueueMessage], media: Bool = false, postpone: Bool = false, commit: Bool = false) {
+    func sendMessages(_ messages: [EnqueueMessage], media: Bool = false, postpone: Bool = false, commit: Bool = false, confirmed: Bool = false) {
         if case let .customChatContents(customChatContents) = self.subject {
             customChatContents.enqueueMessages(messages: messages)
             return
@@ -8982,6 +9297,43 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         
         guard let peerId = self.chatLocation.peerId else {
             return
+        }
+
+        let containsMedia = media || messages.contains(where: { message in
+            switch message {
+            case let .message(_, _, _, mediaReference, _, _, _, _, _, _):
+                return mediaReference != nil
+            case .forward:
+                return false
+            }
+        })
+
+        if !commit && !confirmed {
+            let settings = self.context.currentStuxnetSettings.with { $0 }
+            let requiresConfirmation = containsMedia ? settings.confirmMediaSending : settings.confirmMessageSending
+            if requiresConfirmation {
+                let contentDescription: String
+                if messages.count > 1 {
+                    contentDescription = "Send \(messages.count) messages?"
+                } else if containsMedia {
+                    contentDescription = "Send this media or file?"
+                } else {
+                    contentDescription = "Send this message?"
+                }
+                self.present(textAlertController(
+                    context: self.context,
+                    updatedPresentationData: self.updatedPresentationData,
+                    title: "Confirm sending",
+                    text: contentDescription,
+                    actions: [
+                        TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
+                        TextAlertAction(type: .defaultAction, title: "Send", action: { [weak self] in
+                            self?.sendMessages(messages, media: containsMedia, postpone: postpone, commit: commit, confirmed: true)
+                        })
+                    ]
+                ), in: .window(.root))
+                return
+            }
         }
         
         let _ = (self.shouldDivertMessagesToScheduled(messages: messages)

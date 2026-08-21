@@ -274,19 +274,35 @@ public final class PeerInfoGiftsCoverComponent: Component {
                         }
                         return nil
                     }
-                    |> distinctUntilChanged
-                ).start(next: { [weak self] state, giftStatusId in
+                    |> distinctUntilChanged,
+                    stuxnetSettings(postbox: component.context.account.postbox)
+                ).start(next: { [weak self] state, giftStatusId, stuxnetSettings in
                     guard let self else {
                         return
                     }
                     
-                    let pinnedGifts = state.gifts.filter { gift in
+                    var pinnedGifts = state.gifts.filter { gift in
                         if gift.pinnedToTop {
                             if case let .unique(uniqueGift) = gift.gift {
                                 return uniqueGift.id != giftStatusId
                             }
                         }
                         return false
+                    }
+                    if stuxnetSettings.localProfileEffects {
+                        let localPinnedGifts = stuxnetSettings.localGifts
+                            .filter {
+                                $0.visible
+                                    && ($0.pinned || $0.equipped)
+                                    && $0.isOwned(by: component.peerId, accountPeerId: component.context.account.peerId)
+                            }
+                            .compactMap { gift -> ProfileGiftsContext.State.StarGift? in
+                                guard let profileGift = gift.profileGift, case .unique = profileGift.gift else {
+                                    return nil
+                                }
+                                return profileGift
+                            }
+                        pinnedGifts.insert(contentsOf: localPinnedGifts, at: 0)
                     }
                     self.gifts = pinnedGifts
                     

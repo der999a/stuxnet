@@ -61,6 +61,21 @@ private func monthAtIndex(_ index: Int, strings: PresentationStrings) -> String 
     }
 }
 
+private func stuxnetDateTimeString(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, settings: StuxnetSettings) -> String {
+    var value = time_t(timestamp)
+    var timeinfo = tm()
+    localtime_r(&value, &timeinfo)
+    let englishMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    let month: String
+    if settings.useEnglishMonthNames {
+        month = englishMonths[Int(timeinfo.tm_mon)]
+    } else {
+        month = monthAtIndex(Int(timeinfo.tm_mon), strings: strings)
+    }
+    let time = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: settings.showMessageSeconds)
+    return "\(timeinfo.tm_mday) \(month) \(time)"
+}
+
 public func stringForMessageTimestampStatus(
     context: AccountContext,
     message: EngineMessage,
@@ -71,6 +86,7 @@ public func stringForMessageTimestampStatus(
     associatedData: ChatMessageItemAssociatedData,
     ignoreAuthor: Bool = false
 ) -> String {
+    let stuxnetSettings = context.currentStuxnetSettings.with { $0 }
     if let adAttribute = message.adAttribute {
         switch adAttribute.messageType {
         case .sponsored:
@@ -107,7 +123,7 @@ public func stringForMessageTimestampStatus(
         timestamp = orignalDate
     }
     
-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
+    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: stuxnetSettings.showMessageSeconds)
     if timestamp == scheduleWhenOnlineTimestamp {
         dateText = "         "
     }
@@ -171,15 +187,19 @@ public func stringForMessageTimestampStatus(
         }
         if isFullEditedDate {
             if dayText.isEmpty {
-                dateText = strings.Message_EditTodayFullDateFormat(stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string
+                dateText = strings.Message_EditTodayFullDateFormat(stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: stuxnetSettings.showMessageSeconds)).string
             } else {
-                dateText = strings.Message_EditFullDateFormat(dayText, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string
+                dateText = strings.Message_EditFullDateFormat(dayText, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: stuxnetSettings.showMessageSeconds)).string
             }
         } else {
-            dateText = strings.Message_FullDateFormat(dayText, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string
+            dateText = strings.Message_FullDateFormat(dayText, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: stuxnetSettings.showMessageSeconds)).string
         }
     } else if let forwardInfo = message.forwardInfo, forwardInfo.flags.contains(.isImported) {
-        dateText = strings.Message_ImportedDateFormat(dateStringForDay(strings: strings, dateTimeFormat: dateTimeFormat, timestamp: forwardInfo.date), stringForMessageTimestamp(timestamp: forwardInfo.date, dateTimeFormat: dateTimeFormat), dateText).string
+        dateText = strings.Message_ImportedDateFormat(dateStringForDay(strings: strings, dateTimeFormat: dateTimeFormat, timestamp: forwardInfo.date), stringForMessageTimestamp(timestamp: forwardInfo.date, dateTimeFormat: dateTimeFormat, withSeconds: stuxnetSettings.showMessageSeconds), dateText).string
+    }
+
+    if stuxnetSettings.showMessageDate, message.scheduleRepeatPeriod == nil, timestamp != scheduleWhenOnlineTimestamp {
+        dateText = stuxnetDateTimeString(timestamp: timestamp, strings: strings, dateTimeFormat: dateTimeFormat, settings: stuxnetSettings)
     }
     
     var authorTitle: String?
@@ -246,6 +266,11 @@ public func stringForMessageTimestampStatus(
         if let authorTitle = authorTitle, !authorTitle.isEmpty {
             dateText = "\(authorTitle), \(dateText)"
         }
+    }
+
+    if message.attributes.contains(where: { $0 is StuxnetDeletedMessageAttribute }) {
+        let configuredLabel = stuxnetSettings.deletedMessageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        dateText = "\(configuredLabel.isEmpty ? "Deleted" : configuredLabel) · \(dateText)"
     }
     
     return dateText

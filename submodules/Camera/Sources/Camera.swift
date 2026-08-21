@@ -332,6 +332,7 @@ private final class CameraContext {
             self.configure {
                 self.mainDeviceContext?.invalidate()
                 self.mainDeviceContext = CameraDeviceContext(session: self.session, exclusive: false, additional: false, ciContext: self.ciContext, colorSpace: self.colorSpace, isRoundVideo: self.initialConfiguration.isRoundVideo)
+                self.mainDeviceContext?.output.audioSampleBufferProcessor = self.initialConfiguration.audioSampleBufferProcessor
                 self.mainDeviceContext?.configure(position: .back, previewView: self.simplePreviewView, audio: self.initialConfiguration.audio, photo: self.initialConfiguration.photo, metadata: self.initialConfiguration.metadata)
             
                 self.additionalDeviceContext = CameraDeviceContext(session: self.session, exclusive: false, additional: true, ciContext: self.ciContext, colorSpace: self.colorSpace, isRoundVideo: self.initialConfiguration.isRoundVideo)
@@ -383,6 +384,7 @@ private final class CameraContext {
                 let preferLowerFramerate = self.initialConfiguration.preferLowerFramerate || self.initialConfiguration.isRoundVideo
                 
                 self.mainDeviceContext = CameraDeviceContext(session: self.session, exclusive: true, additional: false, ciContext: self.ciContext, colorSpace: self.colorSpace, isRoundVideo: self.initialConfiguration.isRoundVideo)
+                self.mainDeviceContext?.output.audioSampleBufferProcessor = self.initialConfiguration.audioSampleBufferProcessor
                 self.mainDeviceContext?.configure(position: self.positionValue, previewView: self.simplePreviewView, audio: self.initialConfiguration.audio, photo: self.initialConfiguration.photo, metadata: self.initialConfiguration.metadata, preferWide: preferWide, preferLowerFramerate: preferLowerFramerate)
             }
             self.mainDeviceContext?.output.processSampleBuffer = { [weak self] sampleBuffer, pixelBuffer, connection in
@@ -750,8 +752,9 @@ public final class Camera {
         let preferLowerFramerate: Bool
         let reportAudioLevel: Bool
         let isRoundVideo: Bool
+        let audioSampleBufferProcessor: ((CMSampleBuffer) -> Void)?
         
-        public init(preset: Preset, position: Position, isDualEnabled: Bool = false, audio: Bool, photo: Bool, metadata: Bool, preferWide: Bool = false, preferLowerFramerate: Bool = false, reportAudioLevel: Bool = false, isRoundVideo: Bool = false) {
+        public init(preset: Preset, position: Position, isDualEnabled: Bool = false, audio: Bool, photo: Bool, metadata: Bool, preferWide: Bool = false, preferLowerFramerate: Bool = false, reportAudioLevel: Bool = false, isRoundVideo: Bool = false, audioSampleBufferProcessor: ((CMSampleBuffer) -> Void)? = nil) {
             self.preset = preset
             self.position = position
             self.isDualEnabled = isDualEnabled
@@ -762,6 +765,7 @@ public final class Camera {
             self.preferLowerFramerate = preferLowerFramerate
             self.reportAudioLevel = reportAudioLevel
             self.isRoundVideo = isRoundVideo
+            self.audioSampleBufferProcessor = audioSampleBufferProcessor
         }
     }
     

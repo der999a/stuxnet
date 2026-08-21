@@ -1736,6 +1736,7 @@ public protocol AccountContext: AnyObject {
     
     var currentLimitsConfiguration: Atomic<LimitsConfiguration> { get }
     var currentContentSettings: Atomic<ContentSettings> { get }
+    var currentStuxnetSettings: Atomic<StuxnetSettings> { get }
     var currentAppConfiguration: Atomic<AppConfiguration> { get }
     var currentCountriesConfiguration: Atomic<CountriesConfiguration> { get }
     

@@ -5042,21 +5042,26 @@ public final class StoryItemSetContainerComponent: Component {
                                 })
                             }
                         }
-                        if self.displayLikeReactions {
-                            if component.slice.item.storyItem.myReaction == updateReaction.reaction {
-                                action()
+                        self.performWithStoryReactionConfirmation(action: { [weak self] in
+                            guard let self, let component = self.component else {
+                                return
+                            }
+                            if self.displayLikeReactions {
+                                if component.slice.item.storyItem.myReaction == updateReaction.reaction {
+                                    action()
+                                } else {
+                                    self.sendMessageContext.performWithPossibleStealthModeConfirmation(view: self, action: {
+                                        action()
+                                    })
+                                }
                             } else {
                                 self.sendMessageContext.performWithPossibleStealthModeConfirmation(view: self, action: {
-                                    action()
+                                    self.sendMessageContext.presentPaidMessageAlertIfNeeded(view: self, completion: {
+                                        action()
+                                    })
                                 })
                             }
-                        } else {
-                            self.sendMessageContext.performWithPossibleStealthModeConfirmation(view: self, action: {
-                                self.sendMessageContext.presentPaidMessageAlertIfNeeded(view: self, completion: {
-                                    action()
-                                })
-                            })
-                        }
+                        })
                     }
                     
                     reactionContextNode.premiumReactionsSelected = { [weak self] file in
@@ -6086,7 +6091,34 @@ public final class StoryItemSetContainerComponent: Component {
             component.reorder()
         }
         
-        private func performLikeAction() {
+        private func performWithStoryReactionConfirmation(action: @escaping () -> Void) {
+            guard let component = self.component else {
+                return
+            }
+            guard component.context.currentStuxnetSettings.with({ $0.confirmStoryReactions }) else {
+                action()
+                return
+            }
+            let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+            component.controller()?.present(textAlertController(
+                context: component.context,
+                updatedPresentationData: (presentationData, .single(presentationData)),
+                title: "React to this story?",
+                text: "The story owner may see your reaction.",
+                actions: [
+                    TextAlertAction(type: .genericAction, title: "Cancel", action: {}),
+                    TextAlertAction(type: .defaultAction, title: "React", action: action)
+                ]
+            ), in: .window(.root))
+        }
+
+        private func performLikeAction(confirmed: Bool = false) {
+            if !confirmed {
+                self.performWithStoryReactionConfirmation(action: { [weak self] in
+                    self?.performLikeAction(confirmed: true)
+                })
+                return
+            }
             guard let component = self.component else {
                 return
             }

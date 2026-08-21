@@ -2072,11 +2072,14 @@ func _internal_deleteStories(account: Account, peerId: PeerId, ids: [Int32]) -> 
 
 func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPinned: Bool) -> Signal<Never, NoError> {
     if asPinned {
-        return account.postbox.transaction { transaction -> Api.InputPeer? in
-            return transaction.getPeer(peerId).flatMap(apiInputPeer)
+        return account.postbox.transaction { transaction -> (Api.InputPeer?, Bool) in
+            return (
+                transaction.getPeer(peerId).flatMap(apiInputPeer),
+                stuxnetSettings(transaction: transaction).sendReadStories
+            )
         }
-        |> mapToSignal { inputPeer -> Signal<Never, NoError> in
-            guard let inputPeer = inputPeer else {
+        |> mapToSignal { inputPeer, sendReadStories -> Signal<Never, NoError> in
+            guard sendReadStories, let inputPeer = inputPeer else {
                 return .complete()
             }
             
@@ -2102,7 +2105,9 @@ func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPi
             
             #if DEBUG && false
             #else
-            _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            if stuxnetSettings(transaction: transaction).sendReadStories {
+                _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            }
             #endif
             
             return transaction.getPeer(peerId).flatMap(apiInputUser)

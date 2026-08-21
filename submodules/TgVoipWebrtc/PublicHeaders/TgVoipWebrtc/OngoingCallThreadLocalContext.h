@@ -51,6 +51,8 @@
 
 @end
 
+typedef void (^CallAudioInputProcessor)(void * _Nonnull audioSamples, NSInteger sampleCount, NSInteger bytesPerSample, NSInteger channelCount, NSInteger sampleRate);
+
 @interface SharedCallAudioDevice : NSObject
 
 - (instancetype _Nonnull)initWithDisableRecording:(bool)disableRecording enableSystemMute:(bool)enableSystemMute;
@@ -60,6 +62,8 @@
 - (void)setManualAudioSessionIsActive:(bool)isAudioSessionActive;
 
 - (void)setTone:(CallAudioTone * _Nullable)tone;
+
+- (void)setInputAudioProcessor:(CallAudioInputProcessor _Nullable)processor;
 
 @end
 

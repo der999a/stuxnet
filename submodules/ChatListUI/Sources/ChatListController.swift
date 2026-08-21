@@ -149,6 +149,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private(set) var presentationData: PresentationData
     private let presentationDataValue = Promise<PresentationData>()
     private var presentationDataDisposable: Disposable?
+    private var stuxnetSettingsDisposable: Disposable?
     
     private let stateDisposable = MetaDisposable()
     private let filterDisposable = MetaDisposable()
@@ -769,6 +770,15 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 self.storyPostingAvailabilityValue.set(postingAvailability)
             }
         })
+
+        self.stuxnetSettingsDisposable = (stuxnetSettings(postbox: context.account.postbox)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] settings in
+            guard let self else {
+                return
+            }
+            let _ = self.context.currentStuxnetSettings.swap(settings)
+            self.refreshStuxnetSettings()
+        })
         
         self.updateNavigationMetadata()
 
@@ -797,6 +807,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.suggestAutoarchiveDisposable.dispose()
         self.dismissAutoarchiveDisposable.dispose()
         self.presentationDataDisposable?.dispose()
+        self.stuxnetSettingsDisposable?.dispose()
         self.stateDisposable.dispose()
         self.filterDisposable.dispose()
         self.featuredFiltersDisposable.dispose()
@@ -816,6 +827,15 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             disposable.dispose()
         }
         self.globalControlPanelsContextStateDisposable?.dispose()
+    }
+
+    func refreshStuxnetSettings() {
+        guard self.isNodeLoaded else {
+            return
+        }
+        self.chatListDisplayNode.mainContainerNode.currentItemNode.forEachVisibleItemNode { itemNode in
+            (itemNode as? ChatListItemNode)?.refreshStuxnetSettings()
+        }
     }
     
     private func updateNavigationMetadata() {

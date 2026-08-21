@@ -1576,6 +1576,9 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         return item.presentationData.strings.VoiceOver_ChatList_MessageEmpty
                     }
                 case let .peer(peerData):
+                    if let peerId = peerData.peer.chatMainPeer?.id, item.context.currentStuxnetSettings.with({ $0.isChatLocked(peerId) }) {
+                        return "Locked chat. Message preview hidden."
+                    }
                     if let message = peerData.messages.last {
                         var result = ""
                         if message.flags.contains(.Incoming) {
@@ -2026,6 +2029,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             
             if case let .peer(peerData) = item.content, let customMessageListData = peerData.customMessageListData, customMessageListData.commandPrefix != nil {
                 avatarDiameter = 40.0
+            } else if !item.useCommunityViewLayout && item.context.currentStuxnetSettings.with({ $0.compactChatList }) {
+                avatarDiameter = min(52.0, floor(item.presentationData.fontSize.baseDisplaySize * 52.0 / 17.0))
             }
                 
             if avatarDiameter != 60.0 {
@@ -2559,6 +2564,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             let enableChatListPhotos = true
+            let hideStuxnetChatListAvatar = !item.useCommunityViewLayout && useChatListLayout && !item.interaction.isInlineMode && threadInfo == nil && item.context.currentStuxnetSettings.with({ $0.hideChatListAvatars })
             
             // if changed, adjust setupItem accordingly
             var avatarDiameter = min(60.0, floor(item.presentationData.fontSize.baseDisplaySize * 60.0 / 17.0))
@@ -2568,6 +2574,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             if case let .peer(peerData) = item.content, let customMessageListData = peerData.customMessageListData, customMessageListData.commandPrefix != nil {
                 avatarDiameter = 40.0
                 avatarLeftInset = 17.0 + avatarDiameter
+            } else if hideStuxnetChatListAvatar {
+                avatarDiameter = 1.0
+                avatarLeftInset = 16.0
+            } else if !item.useCommunityViewLayout && useChatListLayout && item.context.currentStuxnetSettings.with({ $0.compactChatList }) {
+                avatarDiameter = min(52.0, floor(item.presentationData.fontSize.baseDisplaySize * 52.0 / 17.0))
+                avatarLeftInset = 24.0 + avatarDiameter
             } else if item.useCommunityViewLayout {
                 avatarLeftInset = avatarLeftEdgeInset + 8.0 + avatarDiameter
             } else {
@@ -2596,36 +2608,49 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             let contentData: ContentData
             
             var hideAuthor = false
+            var isStuxnetChatLocked = false
             switch contentPeer {
                 case let .chat(itemPeer):
                     var (peer, initialHideAuthor, messageText, messageEntities, spoilers, customEmojiRanges, richTextPreview) = chatListItemStrings(strings: item.presentationData.strings, nameDisplayOrder: item.presentationData.nameDisplayOrder, dateTimeFormat: item.presentationData.dateTimeFormat, contentSettings: item.context.currentContentSettings.with { $0 }, messages: messages, chatPeer: itemPeer, accountPeerId: item.context.account.peerId, enableMediaEmoji: !enableChatListPhotos, isPeerGroup: isPeerGroup)
+
+                    isStuxnetChatLocked = item.context.currentStuxnetSettings.with { $0.isChatLocked(itemPeer.peerId) }
+                    if isStuxnetChatLocked {
+                        initialHideAuthor = true
+                        messageText = "Locked chat"
+                        messageEntities = []
+                        spoilers = [NSRange(location: 0, length: (messageText as NSString).length)]
+                        customEmojiRanges = nil
+                        richTextPreview = nil
+                    }
                     
-                    if case let .psa(_, maybePsaText) = promoInfo, let psaText = maybePsaText {
+                    if !isStuxnetChatLocked, case let .psa(_, maybePsaText) = promoInfo, let psaText = maybePsaText {
                         initialHideAuthor = true
                         messageText = psaText
                         richTextPreview = nil
                     }
                 
-                    switch itemPeer.peer {
-                    case .user:
-                        if let attribute = messages.first?._asMessage().reactionsAttribute {
-                            loop: for recentPeer in attribute.recentPeers {
-                                if recentPeer.isUnseen {
-                                    switch recentPeer.value {
-                                    case let .builtin(value):
-                                        messageText = item.presentationData.strings.ChatList_UserReacted(value).string
-                                        richTextPreview = nil
-                                    case .custom:
-                                        break
-                                    case .stars:
-                                        break
+                    if !isStuxnetChatLocked {
+                        switch itemPeer.peer {
+                        case .user:
+                            if let attribute = messages.first?._asMessage().reactionsAttribute {
+                                loop: for recentPeer in attribute.recentPeers {
+                                    if recentPeer.isUnseen {
+                                        switch recentPeer.value {
+                                        case let .builtin(value):
+                                            messageText = item.presentationData.strings.ChatList_UserReacted(value).string
+                                            richTextPreview = nil
+                                        case .custom:
+                                            break
+                                        case .stars:
+                                            break
+                                        }
+                                        break loop
                                     }
-                                    break loop
                                 }
                             }
+                        default:
+                            break
                         }
-                    default:
-                        break
                     }
                     
                     contentData = .chat(itemPeer: itemPeer, threadInfo: threadInfo, peer: peer, hideAuthor: hideAuthor, messageText: messageText, messageEntities: messageEntities, spoilers: spoilers, customEmojiRanges: customEmojiRanges, richTextPreview: richTextPreview)
@@ -2663,7 +2688,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 }
             }
             
-            if useInlineAuthorPrefix {
+            if !isStuxnetChatLocked && useInlineAuthorPrefix {
                 if case let .user(author) = messages.last?.author {
                     if author.id == item.context.account.peerId {
                         inlineAuthorPrefix = item.presentationData.strings.DialogList_You
@@ -2807,7 +2832,17 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         foldedRichTextPreview = nil
                     }
                 
-                    if inlineAuthorPrefix == nil, let mediaDraftContentType {
+                    if isStuxnetChatLocked {
+                        hasDraft = false
+                        authorAttributedString = nil
+                        let concealedText = NSMutableAttributedString(string: messageText, font: textFont, textColor: theme.messageTextColor)
+                        if concealedText.length != 0 {
+                            concealedText.addAttribute(NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler), value: true, range: NSRange(location: 0, length: concealedText.length))
+                        }
+                        attributedText = concealedText
+                        chatListSearchResult = nil
+                        chatListQuoteSearchResult = nil
+                    } else if inlineAuthorPrefix == nil, let mediaDraftContentType {
                         hasDraft = true
                         authorAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_Draft, font: textFont, textColor: theme.messageDraftTextColor)
                         
@@ -3364,8 +3399,38 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 localtime_r(&t, &timeinfo)
                 
                 let timestamp = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
-                
-                dateText = stringForRelativeTimestamp(strings: item.presentationData.strings, relativeTimestamp: topIndex.timestamp, relativeTo: timestamp, dateTimeFormat: item.presentationData.dateTimeFormat)
+                var now = Int(timestamp)
+                var nowTimeinfo = tm()
+                localtime_r(&now, &nowTimeinfo)
+                let stuxnetSettings = item.context.currentStuxnetSettings.with { $0 }
+                if stuxnetSettings.showChatListDate {
+                    let englishMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    let month: String
+                    if stuxnetSettings.useEnglishMonthNames {
+                        month = englishMonths[Int(timeinfo.tm_mon)]
+                    } else {
+                        switch timeinfo.tm_mon {
+                        case 0: month = item.presentationData.strings.Month_ShortJanuary
+                        case 1: month = item.presentationData.strings.Month_ShortFebruary
+                        case 2: month = item.presentationData.strings.Month_ShortMarch
+                        case 3: month = item.presentationData.strings.Month_ShortApril
+                        case 4: month = item.presentationData.strings.Month_ShortMay
+                        case 5: month = item.presentationData.strings.Month_ShortJune
+                        case 6: month = item.presentationData.strings.Month_ShortJuly
+                        case 7: month = item.presentationData.strings.Month_ShortAugust
+                        case 8: month = item.presentationData.strings.Month_ShortSeptember
+                        case 9: month = item.presentationData.strings.Month_ShortOctober
+                        case 10: month = item.presentationData.strings.Month_ShortNovember
+                        default: month = item.presentationData.strings.Month_ShortDecember
+                        }
+                    }
+                    let time = stringForMessageTimestamp(timestamp: topIndex.timestamp, dateTimeFormat: item.presentationData.dateTimeFormat, withSeconds: stuxnetSettings.showChatListSeconds)
+                    dateText = "\(timeinfo.tm_mday) \(month) \(time)"
+                } else if stuxnetSettings.showChatListSeconds && timeinfo.tm_yday == nowTimeinfo.tm_yday && timeinfo.tm_year == nowTimeinfo.tm_year {
+                    dateText = stringForMessageTimestamp(timestamp: topIndex.timestamp, dateTimeFormat: item.presentationData.dateTimeFormat, withSeconds: true)
+                } else {
+                    dateText = stringForRelativeTimestamp(strings: item.presentationData.strings, relativeTimestamp: topIndex.timestamp, relativeTo: timestamp, dateTimeFormat: item.presentationData.dateTimeFormat)
+                }
             } else {
                 dateText = ""
             }
@@ -3863,7 +3928,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             } else if case let .forum(peerId) = item.chatListLocation {
                 chatPeerId = peerId
             }
-            if let inputActivities = inputActivities, !inputActivities.isEmpty, let chatPeerId {
+            if !isStuxnetChatLocked, let inputActivities = inputActivities, !inputActivities.isEmpty, let chatPeerId {
                 let (size, apply) = inputActivitiesLayout(CGSize(width: rawContentWidth - badgeSize, height: 40.0), item.presentationData, item.presentationData.theme.chatList.messageTextColor, chatPeerId, inputActivities)
                 inputActivitiesSize = size
                 inputActivitiesApply = apply
@@ -4043,6 +4108,9 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 itemHeight += measureLayout.size.height * 3.0
                 itemHeight += titleSpacing
                 itemHeight += authorSpacing
+                if !item.useCommunityViewLayout && useChatListLayout && item.context.currentStuxnetSettings.with({ $0.compactChatList }) {
+                    itemHeight -= 8.0
+                }
             }
                         
             let rawContentRect = CGRect(origin: CGPoint(x: 2.0, y: layoutOffset + floor(item.presentationData.fontSize.itemListBaseFontSize * 8.0 / 17.0)), size: CGSize(width: rawContentWidth, height: itemHeight - 12.0 - 9.0))
@@ -4409,7 +4477,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         avatarIconView.removeFromSuperview()
                     }
                     
-                    if !useChatListLayout {
+                    if !useChatListLayout || hideStuxnetChatListAvatar {
                         strongSelf.avatarContainerNode.isHidden = true
                     } else {
                         strongSelf.avatarContainerNode.isHidden = false
@@ -5000,16 +5068,21 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     }
                     
                     var animateInputActivitiesFrame = false
-                    let inputActivities = inputActivities?.filter({
-                        switch $0.1 {
-                            case .speakingInGroupCall, .seeingEmojiInteraction:
-                                return false
-                            default:
-                                return true
-                        }
-                    })
+                    let effectiveInputActivities: [(EnginePeer, PeerInputActivity)]?
+                    if isStuxnetChatLocked {
+                        effectiveInputActivities = nil
+                    } else {
+                        effectiveInputActivities = inputActivities?.filter({
+                            switch $0.1 {
+                                case .speakingInGroupCall, .seeingEmojiInteraction:
+                                    return false
+                                default:
+                                    return true
+                            }
+                        })
+                    }
                     
-                    if let inputActivities = inputActivities, !inputActivities.isEmpty {
+                    if let inputActivities = effectiveInputActivities, !inputActivities.isEmpty {
                         if strongSelf.inputActivitiesNode.supernode == nil {
                             strongSelf.mainContentContainerNode.addSubnode(strongSelf.inputActivitiesNode)
                         } else {
@@ -5546,6 +5619,14 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     
     override public func animateInsertion(_ currentTimestamp: Double, duration: Double, options: ListViewItemAnimationOptions) {
         self.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.25)
+    }
+
+    func refreshStuxnetSettings() {
+        guard let layoutParams = self.layoutParams else {
+            return
+        }
+        let (_, apply) = self.asyncLayout()(layoutParams.0, layoutParams.6, layoutParams.1, layoutParams.2, layoutParams.3, layoutParams.4, layoutParams.5)
+        let _ = apply(false, false)
     }
     
     override public func animateRemoved(_ currentTimestamp: Double, duration: Double) {

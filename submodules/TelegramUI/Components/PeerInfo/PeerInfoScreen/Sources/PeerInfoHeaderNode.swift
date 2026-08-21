@@ -1223,7 +1223,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             if title.isEmpty {
                 if case let .user(user) = peer, let phone = user.phone {
-                    title = formatPhoneNumber(context: self.context, number: phone)
+                    if self.context.currentStuxnetSettings.with({ $0.hidePhoneNumberLocally }) {
+                        title = "Hidden contact"
+                    } else {
+                        title = formatPhoneNumber(context: self.context, number: phone)
+                    }
                 } else if let addressName = peer.addressName {
                     title = "@\(addressName)"
                 } else {
@@ -1236,10 +1240,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)
             
             if self.isSettings, case let .user(user) = peer {
-                var subtitle = formatPhoneNumber(context: self.context, number: user.phone ?? "")
+                let hidePhoneNumber = self.context.currentStuxnetSettings.with { $0.hidePhoneNumberLocally }
+                var subtitle = hidePhoneNumber ? "Phone hidden locally" : formatPhoneNumber(context: self.context, number: user.phone ?? "")
                 
                 if let mainUsername = user.addressName, !mainUsername.isEmpty {
-                    subtitle = "\(subtitle) • @\(mainUsername)"
+                    subtitle = hidePhoneNumber ? "@\(mainUsername)" : "\(subtitle) • @\(mainUsername)"
                 }
                 subtitleStringText = subtitle
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: .white)

@@ -170,6 +170,7 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
     private let actionDisposable = MetaDisposable()
     private let badgeDisposable = MetaDisposable()
     private var isJoining: Bool = false
+    private var skipNextJoinConfirmation: Bool = false
     
     private var presentationInterfaceState: ChatPresentationInterfaceState?
     
@@ -206,12 +207,37 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
     }
     
     @objc private func buttonPressed() {
+        let skipJoinConfirmation = self.skipNextJoinConfirmation
+        self.skipNextJoinConfirmation = false
+
         guard let context = self.context, let action = self.action, let presentationInterfaceState = self.presentationInterfaceState, let peer = presentationInterfaceState.renderedPeer?.peer else {
             return
         }
         
         switch action {
         case .join, .joinGroup, .applyToJoin:
+            if !skipJoinConfirmation,
+               let channel = peer as? TelegramChannel,
+               case .broadcast = channel.info,
+               context.currentStuxnetSettings.with({ $0.confirmChannelSubscriptions }) {
+                self.interfaceInteraction?.presentController(textAlertController(
+                    context: context,
+                    title: presentationInterfaceState.strings.Channel_JoinChannel,
+                    text: "Subscribe to \(EnginePeer(peer).compactDisplayTitle)?",
+                    actions: [
+                        TextAlertAction(type: .genericAction, title: presentationInterfaceState.strings.Common_Cancel, action: {}),
+                        TextAlertAction(type: .defaultAction, title: presentationInterfaceState.strings.Channel_JoinChannel, action: { [weak self] in
+                            guard let self else {
+                                return
+                            }
+                            self.skipNextJoinConfirmation = true
+                            self.buttonPressed()
+                        })
+                    ]
+                ), nil)
+                return
+            }
+
             self.isJoining = true
             if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, isSecondary, metrics, deviceMetrics) = self.layoutData, let presentationInterfaceState = self.presentationInterfaceState {
                 let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: presentationInterfaceState, metrics: metrics, deviceMetrics: deviceMetrics, force: true)

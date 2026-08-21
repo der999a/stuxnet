@@ -130,6 +130,7 @@ final class CameraOutput: NSObject {
         
     var processSampleBuffer: ((CMSampleBuffer, CVImageBuffer, AVCaptureConnection) -> Void)?
     var processAudioBuffer: ((CMSampleBuffer) -> Void)?
+    var audioSampleBufferProcessor: ((CMSampleBuffer) -> Void)?
     var processCodes: (([CameraCode]) -> Void)?
         
     init(exclusive: Bool, ciContext: CIContext, colorSpace: CGColorSpace, use32BGRA: Bool = false) {
@@ -532,6 +533,10 @@ final class CameraOutput: NSObject {
             return
         }
         let type = CMFormatDescriptionGetMediaType(formatDescriptor)
+
+        if type == kCMMediaType_Audio {
+            self.audioSampleBufferProcessor?(sampleBuffer)
+        }
         
         if case .roundVideo = self.currentMode, type == kCMMediaType_Video {
             let currentTimestamp = CACurrentMediaTime()

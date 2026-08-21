@@ -655,6 +655,8 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                     
                     strongSelf.appliedParams = params
                     strongSelf.appliedItem = item
+                    let dimDeletedMessage = item.message.stuxnetIsDeleted && item.context.currentStuxnetSettings.with { $0.dimDeletedMessages }
+                    strongSelf.contextSourceNode.contentNode.alpha = dimDeletedMessage ? 0.58 : 1.0
                     strongSelf.appliedHasAvatar = hasAvatar
                     strongSelf.appliedForwardInfo = (forwardSource, forwardAuthorSignature)
                     strongSelf.appliedCurrentlyPlaying = isPlaying

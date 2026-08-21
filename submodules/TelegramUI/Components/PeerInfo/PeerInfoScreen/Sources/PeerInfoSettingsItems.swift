@@ -28,6 +28,7 @@ enum SettingsSection: Int, CaseIterable {
 }
 
 func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isExpanded: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
+    let stuxnetSettings = context.currentStuxnetSettings.with { $0 }
     guard let data = data else {
         return []
     }
@@ -86,7 +87,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                 interaction.openSettings(.premiumManagement)
             }))
         } else if settings.suggestPhoneNumberConfirmation, case let .user(peer) = data.peer {
-            let phoneNumber = formatPhoneNumber(context: context, number: peer.phone ?? "")
+            let phoneNumber = stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : formatPhoneNumber(context: context, number: peer.phone ?? "")
             items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
                 if case .tap = link {
                     interaction.openFaq(presentationData.strings.Settings_CheckPhoneNumberFAQAnchor)
@@ -233,6 +234,9 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_PrivacySettings, icon: PresentationResourcesSettings.security, action: {
         interaction.openSettings(.privacyAndSecurity)
     }))
+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 10, text: "Stuxnet", icon: PresentationResourcesSettings.security, action: {
+        interaction.openSettings(.stuxnet)
+    }))
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_ChatSettings, icon: PresentationResourcesSettings.dataAndStorage, action: {
         interaction.openSettings(.dataAndStorage)
     }))
@@ -287,6 +291,32 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             }
             items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 103, label: .attributedText(balanceText), text: presentationData.strings.Settings_MyTon, icon: PresentationResourcesSettings.ton, action: {
                 interaction.openSettings(.ton)
+            }))
+        }
+    }
+    if stuxnetSettings.localProfileEffects {
+        if stuxnetSettings.localStarsBalance != 0 {
+            items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 1102, label: .text("\(stuxnetSettings.localStarsBalance)"), text: "My Stars", icon: PresentationResourcesSettings.stars, action: {
+                interaction.openSettings(.stuxnet)
+            }))
+        }
+        if stuxnetSettings.localTonBalanceNano != 0 {
+            let formattedTon = formatTonAmountText(stuxnetSettings.localTonBalanceNano, dateTimeFormat: presentationData.dateTimeFormat)
+            items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 1103, label: .text(formattedTon), text: "My TON", icon: PresentationResourcesSettings.ton, action: {
+                interaction.openSettings(.stuxnet)
+            }))
+        }
+        let visibleGifts = stuxnetSettings.localGifts.filter {
+            $0.visible
+                && $0.sourceGift != nil
+                && $0.isOwned(by: context.account.peerId, accountPeerId: context.account.peerId)
+        }
+        if !visibleGifts.isEmpty {
+            let featuredGift = visibleGifts.first(where: { $0.pinned }) ?? visibleGifts[0]
+            let giftNumber = featuredGift.number.map { " #\($0)" } ?? ""
+            let giftLabel = "\(featuredGift.symbol) \(featuredGift.model)\(giftNumber)"
+            items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 1104, label: .text(giftLabel), text: "My Gifts (\(visibleGifts.count))", icon: PresentationResourcesSettings.premiumGift, action: {
+                interaction.openSettings(.stuxnet)
             }))
         }
     }
@@ -444,7 +474,8 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
     }
     
     if case let .user(user) = data.peer {
-        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
+        let phoneLabel = stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : (user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? "")
+        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(phoneLabel), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
             interaction.openSettings(.phoneNumber)
         }))
     }

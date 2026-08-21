@@ -132,11 +132,22 @@ extension ChatControllerImpl {
             if let existingDraft, let path = self.context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(existingDraft.resource.id)), let compressedData = try? Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe]), let recorderResumeData = existingDraft.resumeData {
                 resumeData = AudioRecorderResumeData(compressedData: compressedData, resumeData: recorderResumeData)
             }
+
+            let stuxnetSettings = self.context.currentStuxnetSettings.with { $0 }
+            let voiceLabConfiguration = VoiceLabConfiguration(
+                isEnabled: stuxnetSettings.voiceLabEnabled && stuxnetSettings.voiceLabApplyToVoiceMessages,
+                preset: stuxnetSettings.voiceLabPreset,
+                pitchSemitones: Float(stuxnetSettings.voiceLabPitchSemitones),
+                tone: Float(stuxnetSettings.voiceLabTone) / 100.0,
+                robotMix: Float(stuxnetSettings.voiceLabRobotMix) / 100.0,
+                gainDb: Float(stuxnetSettings.voiceLabGainDb)
+            )
             
             self.audioRecorder.set(
                 self.context.sharedContext.mediaManager.audioRecorder(
                     resumeData: resumeData,
                     beginWithTone: beginWithTone,
+                    voiceLabConfiguration: voiceLabConfiguration,
                     applicationBindings: self.context.sharedContext.applicationBindings,
                     beganWithTone: { _ in
                     }
@@ -178,6 +189,7 @@ extension ChatControllerImpl {
                     updatedPresentationData: self.updatedPresentationData,
                     allowLiveUpload: allowLiveUpload,
                     viewOnceAvailable: viewOnceAvailable,
+                    startWithFrontCamera: !self.context.currentStuxnetSettings.with { $0.recordRoundVideosWithRearCamera },
                     inputPanelFrame: (currentInputPanelFrame, self.chatDisplayNode.inputNode != nil),
                     chatNode: self.chatDisplayNode.historyNode,
                     completion: { [weak self] message, silentPosting, scheduleTime, repeatPeriod in

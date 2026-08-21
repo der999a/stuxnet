@@ -1306,9 +1306,27 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
                         content = .title(HorizontalTabsComponent.Tab.Title(text: presentationData.strings.PeerInfo_SavedMessagesTabTitle, entities: [], enableAnimations: false))
                     case .gifts:
                         var icons: [ProfileGiftsContext.State.StarGift] = []
-                        if let gifts = data?.profileGiftsContext?.currentState?.gifts.prefix(3) {
-                            icons = Array(gifts)
+                        let localIcons: [ProfileGiftsContext.State.StarGift] = self.context.currentStuxnetSettings.with { settings in
+                            guard settings.localProfileEffects else {
+                                return []
+                            }
+                            return settings.localGifts
+                                .filter {
+                                    $0.visible
+                                        && $0.isOwned(by: self.peerId, accountPeerId: self.context.account.peerId)
+                                }
+                                .sorted { lhs, rhs in
+                                    if lhs.equipped != rhs.equipped { return lhs.equipped }
+                                    if lhs.pinned != rhs.pinned { return lhs.pinned }
+                                    return lhs.createdAt > rhs.createdAt
+                                }
+                                .compactMap { $0.profileGift }
                         }
+                        icons.append(contentsOf: localIcons.prefix(3))
+                        if let gifts = data?.profileGiftsContext?.currentState?.gifts.prefix(3) {
+                            icons.append(contentsOf: gifts)
+                        }
+                        icons = Array(icons.prefix(3))
                         content = .custom(AnyComponent(
                             GiftsTabItemComponent(context: self.context, icons: icons, title: presentationData.strings.PeerInfo_PaneGifts, theme: presentationData.theme)
                         ))

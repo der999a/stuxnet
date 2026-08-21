@@ -2301,6 +2301,79 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
+        if context.currentStuxnetSettings.with({ $0.showMessageDetails }) {
+            if !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            actions.insert(.action(ContextMenuActionItem(text: "Message details", icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Info"), color: theme.actionSheet.primaryTextColor)
+            }, action: { c, _ in
+                c?.dismiss(completion: {
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.locale = Locale.current
+                    dateFormatter.dateStyle = .medium
+                    dateFormatter.timeStyle = .medium
+                    var lines: [String] = [
+                        "Peer ID: \(message.id.peerId.id._internalGetInt64Value())",
+                        "Peer namespace: \(message.id.peerId.namespace)",
+                        "Message ID: \(message.id.id)",
+                        "Message namespace: \(message.id.namespace)",
+                        "Date: \(dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.timestamp))))",
+                        "Direction: \(message.flags.contains(.Incoming) ? "incoming" : "outgoing")",
+                        "Locally preserved deletion: \(message.stuxnetIsDeleted ? "yes" : "no")",
+                        "Saved edit revisions: \(message.stuxnetRevisions.count)"
+                    ]
+                    if let authorId = message.author?.id {
+                        lines.append("Author ID: \(authorId.id._internalGetInt64Value())")
+                    }
+                    if let threadId = message.threadId {
+                        lines.append("Thread ID: \(threadId)")
+                    }
+                    controllerInteraction.presentController(textAlertController(
+                        context: context,
+                        title: "Stuxnet message details",
+                        text: lines.joined(separator: "\n"),
+                        actions: [
+                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
+                        ],
+                        actionLayout: .vertical
+                    ), nil)
+                })
+            })), at: 0)
+        }
+
+        let stuxnetRevisions = message.stuxnetRevisions
+        if !stuxnetRevisions.isEmpty {
+            if !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            actions.insert(.action(ContextMenuActionItem(text: "Edit history (\(stuxnetRevisions.count))", icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.actionSheet.primaryTextColor)
+            }, action: { c, _ in
+                c?.dismiss(completion: {
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.locale = Locale.current
+                    dateFormatter.dateStyle = .medium
+                    dateFormatter.timeStyle = .medium
+                    let historyText = stuxnetRevisions.enumerated().map { index, revision -> String in
+                        let date = dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(revision.timestamp)))
+                        return "\(index + 1). \(date)\n\(revision.text)"
+                    }.joined(separator: "\n\n")
+                    controllerInteraction.presentController(textAlertController(
+                        context: context,
+                        title: "Local edit history",
+                        text: historyText,
+                        actions: [
+                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
+                        ],
+                        actionLayout: .vertical
+                    ), nil)
+                })
+            })), at: 0)
+        }
+
         if isEdited {
             if !actions.isEmpty {
                 actions.insert(.separator, at: 0)

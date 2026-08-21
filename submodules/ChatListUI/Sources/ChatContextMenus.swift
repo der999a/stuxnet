@@ -15,6 +15,7 @@ import TelegramPresentationData
 import TelegramStringFormatting
 import ChatTimerScreen
 import NotificationPeerExceptionController
+import LocalAuth
 
 func archiveContextMenuItems(context: AccountContext, group: EngineChatList.Group, chatListController: ChatListControllerImpl?) -> Signal<[ContextMenuItem], NoError> {
     let presentationData = context.sharedContext.currentPresentationData.with({ $0 })
@@ -477,71 +478,145 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                                         text = strings.ChatList_Context_JoinChat
                                     }
                                     items.append(.action(ContextMenuActionItem(text: text, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Add"), color: theme.contextMenu.primaryColor) }, action: { _, f in
-                                        var createSignal = context.peerChannelMemberCategoriesContextsManager.join(engine: context.engine, peerId: peerId, hash: nil)
-                                        var cancelImpl: (() -> Void)?
-                                        let progressSignal = Signal<Never, NoError> { subscriber in
-                                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                                            let controller = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: {
-                                                cancelImpl?()
-                                            }))
-                                            chatListController?.present(controller, in: .window(.root))
-                                            return ActionDisposable { [weak controller] in
-                                                Queue.mainQueue().async() {
-                                                    controller?.dismiss()
-                                                }
-                                            }
-                                        }
-                                        |> runOn(Queue.mainQueue())
-                                        |> delay(0.15, queue: Queue.mainQueue())
-                                        let progressDisposable = progressSignal.start()
-                                        
-                                        createSignal = createSignal
-                                        |> afterDisposed {
-                                            Queue.mainQueue().async {
-                                                progressDisposable.dispose()
-                                            }
-                                        }
-                                        let joinChannelDisposable = MetaDisposable()
-                                        cancelImpl = {
-                                            joinChannelDisposable.set(nil)
-                                        }
-                                        
-                                        var didJoin = false
-                                        joinChannelDisposable.set((createSignal
-                                        |> deliverOnMainQueue).start(next: { result in
-                                            switch result {
-                                            case .joined:
-                                                didJoin = true
-                                            case let .webView(webView):
-                                                if let chatListController = chatListController {
-                                                    context.sharedContext.openJoinChatWebView(context: context, parentController: chatListController, updatedPresentationData: nil, webView: webView, chatTitle: EnginePeer(peer).compactDisplayTitle)
-                                                }
-                                            }
-                                        }, error: { _ in
-                                            if let chatListController = chatListController {
+                                        let performJoin: () -> Void = {
+                                            var createSignal = context.peerChannelMemberCategoriesContextsManager.join(engine: context.engine, peerId: peerId, hash: nil)
+                                            var cancelImpl: (() -> Void)?
+                                            let progressSignal = Signal<Never, NoError> { subscriber in
                                                 let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                                                chatListController.present(textAlertController(context: context, title: nil, text: presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                                                let controller = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: {
+                                                    cancelImpl?()
+                                                }))
+                                                chatListController?.present(controller, in: .window(.root))
+                                                return ActionDisposable { [weak controller] in
+                                                    Queue.mainQueue().async() {
+                                                        controller?.dismiss()
+                                                    }
+                                                }
                                             }
-                                        }, completed: {
-                                            if !didJoin {
-                                                return
+                                            |> runOn(Queue.mainQueue())
+                                            |> delay(0.15, queue: Queue.mainQueue())
+                                            let progressDisposable = progressSignal.start()
+
+                                            createSignal = createSignal
+                                            |> afterDisposed {
+                                                Queue.mainQueue().async {
+                                                    progressDisposable.dispose()
+                                                }
                                             }
-                                            let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
-                                                     |> deliverOnMainQueue).startStandalone(next: { peer in
-                                                guard let peer = peer else {
+                                            let joinChannelDisposable = MetaDisposable()
+                                            cancelImpl = {
+                                                joinChannelDisposable.set(nil)
+                                            }
+
+                                            var didJoin = false
+                                            joinChannelDisposable.set((createSignal
+                                            |> deliverOnMainQueue).start(next: { result in
+                                                switch result {
+                                                case .joined:
+                                                    didJoin = true
+                                                case let .webView(webView):
+                                                    if let chatListController = chatListController {
+                                                        context.sharedContext.openJoinChatWebView(context: context, parentController: chatListController, updatedPresentationData: nil, webView: webView, chatTitle: EnginePeer(peer).compactDisplayTitle)
+                                                    }
+                                                }
+                                            }, error: { _ in
+                                                if let chatListController = chatListController {
+                                                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                                                    chatListController.present(textAlertController(context: context, title: nil, text: presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                                                }
+                                            }, completed: {
+                                                if !didJoin {
                                                     return
                                                 }
-                                                if let navigationController = (chatListController?.navigationController as? NavigationController) {
-                                                    context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer)))
-                                                }
-                                            })
-                                        }))
-                                        f(.default)
+                                                let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+                                                         |> deliverOnMainQueue).startStandalone(next: { peer in
+                                                    guard let peer = peer else {
+                                                        return
+                                                    }
+                                                    if let navigationController = (chatListController?.navigationController as? NavigationController) {
+                                                        context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer)))
+                                                    }
+                                                })
+                                            }))
+                                        }
+
+                                        if case .broadcast = peer.info,
+                                           context.currentStuxnetSettings.with({ $0.confirmChannelSubscriptions }),
+                                           let chatListController {
+                                            f(.dismissWithoutContent)
+                                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                                            Queue.mainQueue().async {
+                                                chatListController.present(textAlertController(
+                                                    context: context,
+                                                    title: presentationData.strings.Channel_JoinChannel,
+                                                    text: "Subscribe to \(EnginePeer(peer).compactDisplayTitle)?",
+                                                    actions: [
+                                                        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                                                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Channel_JoinChannel, action: performJoin)
+                                                    ]
+                                                ), in: .window(.root))
+                                            }
+                                        } else {
+                                            performJoin()
+                                            f(.default)
+                                        }
                                     })))
                                 }
                             }
                         }
                         
+                        if case .community = peer {
+                        } else {
+                            let isStuxnetChatLocked = context.currentStuxnetSettings.with { $0.isChatLocked(peerId) }
+                            let biometricTitle: String
+                            if let biometricAuthentication = LocalAuth.biometricAuthentication {
+                                switch biometricAuthentication {
+                                case .faceId:
+                                    biometricTitle = "Face ID"
+                                case .touchId:
+                                    biometricTitle = "Touch ID"
+                                }
+                            } else {
+                                biometricTitle = "biometrics"
+                            }
+                            items.append(.action(ContextMenuActionItem(text: isStuxnetChatLocked ? "Remove \(biometricTitle) lock" : "Lock with \(biometricTitle)", icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Lock"), color: theme.contextMenu.primaryColor)
+                            }, action: { [weak chatListController] c, _ in
+                                c?.dismiss(completion: {
+                                    guard LocalAuth.biometricAuthentication != nil else {
+                                        chatListController?.present(textAlertController(
+                                            context: context,
+                                            title: "Biometrics unavailable",
+                                            text: "Set up Face ID or Touch ID in iOS before protecting this chat.",
+                                            actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]
+                                        ), in: .window(.root))
+                                        return
+                                    }
+                                    let reason = isStuxnetChatLocked ? "Authenticate to remove protection from this chat" : "Authenticate to protect this chat"
+                                    let _ = (LocalAuth.auth(reason: reason)
+                                    |> deliverOnMainQueue).startStandalone(next: { value, _ in
+                                        guard value else {
+                                            return
+                                        }
+                                        let _ = (updateStuxnetSettingsInteractively(postbox: context.account.postbox, { settings in
+                                            return settings.withUpdatedChatLocked(peerId: peerId, value: !isStuxnetChatLocked)
+                                        })
+                                        |> deliverOnMainQueue).startStandalone(completed: {
+                                            chatListController?.refreshStuxnetSettings()
+                                            let text = isStuxnetChatLocked ? "Chat protection removed" : "Chat protected. Message and media previews are concealed."
+                                            chatListController?.present(UndoOverlayController(
+                                                presentationData: presentationData,
+                                                content: .info(title: nil, text: text, timeout: 2.5, customUndoText: nil),
+                                                elevatedLayout: false,
+                                                animateInAsReplacement: false,
+                                                action: { _ in false }
+                                            ), in: .current)
+                                        })
+                                    })
+                                })
+                            })))
+                        }
+
                         let appendDeleteOrUngroupItem = {
                             if case .community = peer {
                                 items.append(.action(ContextMenuActionItem(text: strings.ChatList_Context_Ungroup, textColor: .destructive, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Ungroup"), color: theme.contextMenu.destructiveColor) }, action: { _, f in

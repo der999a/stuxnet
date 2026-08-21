@@ -21,6 +21,7 @@ swift_library(
         "//submodules/TelegramBaseController:TelegramBaseController",
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/AlertUI:AlertUI",
+        "//submodules/LocalAuth:LocalAuth",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/UndoUI:UndoUI",
         "//submodules/TelegramNotices:TelegramNotices",

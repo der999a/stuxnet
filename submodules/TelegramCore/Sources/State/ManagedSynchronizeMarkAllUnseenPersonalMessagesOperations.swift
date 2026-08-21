@@ -117,6 +117,9 @@ private enum GetUnseenIdsError {
 }
 
 private func synchronizeMarkAllUnseen(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeMarkAllUnseenPersonalMessagesOperation) -> Signal<Void, NoError> {
+    if !stuxnetSettings(transaction: transaction).sendReadMessages {
+        return .complete()
+    }
     guard let inputPeer = transaction.getPeer(peerId).flatMap(apiInputPeer) else {
         return .complete()
     }
@@ -284,6 +287,9 @@ func managedSynchronizeMarkAllUnseenReactionsOperations(postbox: Postbox, networ
 }
 
 private func synchronizeMarkAllUnseenReactions(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeMarkAllUnseenReactionsOperation) -> Signal<Void, NoError> {
+    if !stuxnetSettings(transaction: transaction).sendReadMessages {
+        return .complete()
+    }
     guard let peer = transaction.getPeer(peerId) else {
         return .complete()
     }

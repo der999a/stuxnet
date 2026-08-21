@@ -569,6 +569,53 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
     return combineLatest(signals)
 }
 
+private func stuxnetMessageWithGhostSchedule(transaction: Transaction, account: Account, peerId: PeerId, message: EnqueueMessage, settings: StuxnetSettings) -> EnqueueMessage {
+    guard settings.isGhostModeEnabled, settings.useScheduledMessagesInGhostMode else {
+        return message
+    }
+    guard peerId != account.peerId else {
+        return message
+    }
+    switch peerId.namespace {
+    case Namespaces.Peer.CloudUser, Namespaces.Peer.CloudGroup, Namespaces.Peer.CloudChannel:
+        break
+    default:
+        return message
+    }
+    guard let peer = transaction.getPeer(peerId) else {
+        return message
+    }
+    if let user = peer as? TelegramUser, user.botInfo != nil {
+        return message
+    }
+    if let cachedChannelData = transaction.getPeerCachedData(peerId: peerId) as? CachedChannelData, cachedChannelData.slowModeTimeout != nil {
+        return message
+    }
+    guard case let .message(_, attributes, _, mediaReference, _, _, replyToStoryId, _, _, _) = message else {
+        return message
+    }
+    if replyToStoryId != nil || mediaReference?.media is TelegramMediaAction {
+        return message
+    }
+    if attributes.contains(where: { attribute in
+        return attribute is OutgoingScheduleInfoMessageAttribute
+            || attribute is OutgoingQuickReplyMessageAttribute
+            || attribute is OutgoingChatContextResultMessageAttribute
+            || attribute is PaidStarsMessageAttribute
+            || attribute is SuggestedPostMessageAttribute
+    }) {
+        return message
+    }
+
+    let delay = max(10, min(60, settings.ghostSendDelaySeconds))
+    let scheduleTime = Int32(clamping: Int64(account.network.context.globalTime()) + Int64(delay))
+    return message.withUpdatedAttributes { attributes in
+        var attributes = attributes
+        attributes.append(OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: nil))
+        return attributes
+    }
+}
+
 public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
@@ -579,13 +626,17 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
     return signal
     |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
         return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
-            var resultIds = Array<MessageId?>(repeating: nil, count: messages.count)
+            let settings = stuxnetSettings(transaction: transaction)
+            let effectiveMessages = messages.map { transformedMedia, message in
+                return (transformedMedia, stuxnetMessageWithGhostSchedule(transaction: transaction, account: account, peerId: peerId, message: message, settings: settings))
+            }
+            var resultIds = Array<MessageId?>(repeating: nil, count: effectiveMessages.count)
             var ephemeralMessageIds: [MessageId] = []
             var normalMessages: [(Bool, EnqueueMessage)] = []
             var normalMessageIndices: [Int] = []
 
-            for i in 0 ..< messages.count {
-                let (transformedMedia, message) = messages[i]
+            for i in 0 ..< effectiveMessages.count {
+                let (transformedMedia, message) = effectiveMessages[i]
                 if let botPeerId = ephemeralBotPeerIdForEnqueuedMessage(transaction: transaction, accountPeerId: account.peerId, message: message) {
                     if let messageId = enqueueEphemeralOutgoingMessage(transaction: transaction, account: account, peerId: peerId, transformedMedia: transformedMedia, message: message, botPeerId: botPeerId) {
                         resultIds[i] = messageId
