@@ -160,6 +160,18 @@ jobs:
 
           python3 build-system/Make/ImportCertificates.py \
             --path "$CODESIGN_DIR/certs"
+
+          echo "Preflight: compiling the complete TelegramUI dependency graph before IPA packaging"
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            build \
+            --configurationPath=build-system/stuxnet-configuration.json \
+            --codesigningInformationPath="$CODESIGN_DIR" \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER" \
+            --target=//submodules/TelegramUI:TelegramUI
+
+          echo "Preflight passed; starting the full application build"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \

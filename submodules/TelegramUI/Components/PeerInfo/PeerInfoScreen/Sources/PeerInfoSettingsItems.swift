@@ -366,6 +366,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
 }
 
 func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isMyProfile: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
+    let stuxnetSettings = context.currentStuxnetSettings.with { $0 }
     guard let data = data else {
         return []
     }
