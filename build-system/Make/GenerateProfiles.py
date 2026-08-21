@@ -97,11 +97,26 @@ def get_certificate_base64_from_p12(p12_path, p12_password=''):
     return base64.b64encode(cert_der).decode('utf-8')
 
 
-def process_provisioning_profile(source, destination, certificate_data, signing_identity, keychain_name):
+def replace_string_values(value, replacements):
+    if isinstance(value, dict):
+        return {key: replace_string_values(item, replacements) for key, item in value.items()}
+    if isinstance(value, list):
+        return [replace_string_values(item, replacements) for item in value]
+    if isinstance(value, str):
+        for source, destination in replacements:
+            value = value.replace(source, destination)
+        return value
+    return value
+
+
+def process_provisioning_profile(source, destination, certificate_data, signing_identity, keychain_name, replacements=None):
     parsed_plist = run_executable_with_output('security', arguments=['cms', '-D', '-i', source], check_result=True)
     parsed_plist_file = tempfile.mktemp()
-    with open(parsed_plist_file, 'w+') as file:
-        file.write(parsed_plist)
+    profile_dict = plistlib.loads(parsed_plist.encode('utf-8'))
+    if replacements:
+        profile_dict = replace_string_values(profile_dict, replacements)
+    with open(parsed_plist_file, 'wb') as file:
+        plistlib.dump(profile_dict, file, fmt=plistlib.FMT_XML, sort_keys=False)
 
     # Remove all existing developer certificates
     while True:
@@ -126,7 +141,7 @@ def process_provisioning_profile(source, destination, certificate_data, signing_
     os.unlink(parsed_plist_file)
 
 
-def generate_provisioning_profiles(source_path, destination_path, certs_path):
+def generate_provisioning_profiles(source_path, destination_path, certs_path, source_bundle_id=None, bundle_id=None, source_team_id=None, team_id=None):
     p12_path = os.path.join(certs_path, 'SelfSigned.p12')
 
     if not os.path.exists(p12_path):
@@ -151,6 +166,12 @@ def generate_provisioning_profiles(source_path, destination_path, certs_path):
     # Setup temporary keychain with the certificate
     keychain_name = setup_temp_keychain(p12_path, p12_password)
 
+    replacements = []
+    if source_bundle_id is not None and bundle_id is not None:
+        replacements.append((source_bundle_id, bundle_id))
+    if source_team_id is not None and team_id is not None and source_team_id != team_id:
+        replacements.append((source_team_id, team_id))
+
     try:
         for file_name in os.listdir(source_path):
             if file_name.endswith('.mobileprovision'):
@@ -160,10 +181,34 @@ def generate_provisioning_profiles(source_path, destination_path, certs_path):
                     destination=os.path.join(destination_path, file_name),
                     certificate_data=certificate_data,
                     signing_identity=signing_identity,
-                    keychain_name=keychain_name
+                    keychain_name=keychain_name,
+                    replacements=replacements
                 )
         print('Done. Generated {} profiles.'.format(
             len([f for f in os.listdir(destination_path) if f.endswith('.mobileprovision')])
         ))
     finally:
         cleanup_temp_keychain(keychain_name)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog='generate-fake-profiles')
+    parser.add_argument('--source', required=True)
+    parser.add_argument('--destination', required=True)
+    parser.add_argument('--certs', required=True)
+    parser.add_argument('--source-bundle-id')
+    parser.add_argument('--bundle-id')
+    parser.add_argument('--source-team-id')
+    parser.add_argument('--team-id')
+    args = parser.parse_args()
+
+    os.makedirs(args.destination, exist_ok=True)
+    generate_provisioning_profiles(
+        source_path=args.source,
+        destination_path=args.destination,
+        certs_path=args.certs,
+        source_bundle_id=args.source_bundle_id,
+        bundle_id=args.bundle_id,
+        source_team_id=args.source_team_id,
+        team_id=args.team_id
+    )

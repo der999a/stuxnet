@@ -135,6 +135,7 @@ jobs:
 
           SOURCE_DIR="/Users/Shared/telegram-ios"
           BAZEL_USER_ROOT="/private/var/tmp/_bazel_stuxnet"
+          CODESIGN_DIR="/private/var/tmp/stuxnet-fake-codesigning"
           cd "$SOURCE_DIR"
 
           BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
@@ -145,13 +146,25 @@ jobs:
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
 
+          rm -rf "$CODESIGN_DIR"
+          mkdir -p "$CODESIGN_DIR/certs" "$CODESIGN_DIR/profiles"
+          cp build-system/fake-codesigning/certs/* "$CODESIGN_DIR/certs/"
+          python3 build-system/Make/GenerateProfiles.py \
+            --source build-system/fake-codesigning/profiles \
+            --destination "$CODESIGN_DIR/profiles" \
+            --certs "$CODESIGN_DIR/certs" \
+            --source-bundle-id ph.telegra.Telegraph \
+            --bundle-id com.der999a.stuxnet \
+            --source-team-id C67CF9S4VU \
+            --team-id C67CF9S4VU
+
           python3 build-system/Make/ImportCertificates.py \
-            --path build-system/fake-codesigning/certs
+            --path "$CODESIGN_DIR/certs"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
             --configurationPath=build-system/stuxnet-configuration.json \
-            --codesigningInformationPath=build-system/fake-codesigning \
+            --codesigningInformationPath="$CODESIGN_DIR" \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER" \
             --outputBuildArtifactsPath=build/artifacts
