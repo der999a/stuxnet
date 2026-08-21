@@ -333,9 +333,9 @@ private class ReplyThreadHistoryContextImpl {
 
         let account = self.account
         
-        let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?) in
+        let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?, Bool) in
             guard let peer = transaction.getPeer(peerId) else {
-                return (nil, nil, nil, nil)
+                return (nil, nil, nil, nil, false)
             }
             
             var markMainAsRead = false
