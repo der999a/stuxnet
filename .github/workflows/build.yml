@@ -24,6 +24,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 180
+    env:
+      STUXNET_BAZEL_CACHE: /Users/runner/.cache/stuxnet-bazel
 
     steps:
       - name: Check out sources
@@ -48,6 +50,14 @@ jobs:
 
           sudo xcode-select --switch "$XCODE_DEVELOPER_DIR"
           xcodebuild -version
+
+      - name: Restore Bazel compilation cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STUXNET_BAZEL_CACHE }}
+          key: stuxnet-bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('versions.json', 'MODULE.bazel', 'WORKSPACE', 'WORKSPACE.bzlmod', '.gitmodules') }}-${{ github.sha }}
+          restore-keys: |
+            stuxnet-bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('versions.json', 'MODULE.bazel', 'WORKSPACE', 'WORKSPACE.bzlmod', '.gitmodules') }}-
 
       - name: Validate Stuxnet build configuration
         shell: bash
@@ -164,6 +174,7 @@ jobs:
           echo "Preflight: compiling the complete TelegramUI dependency graph before IPA packaging"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$STUXNET_BAZEL_CACHE" \
             build \
             --configurationPath=build-system/stuxnet-configuration.json \
             --codesigningInformationPath="$CODESIGN_DIR" \
@@ -174,6 +185,7 @@ jobs:
           echo "Preflight passed; starting the full application build"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$STUXNET_BAZEL_CACHE" \
             build \
             --configurationPath=build-system/stuxnet-configuration.json \
             --codesigningInformationPath="$CODESIGN_DIR" \
