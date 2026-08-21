@@ -853,6 +853,10 @@ public final class OngoingCallContext {
         public func setInputAudioProcessor(_ processor: ((UnsafeMutableRawPointer, Int, Int, Int, Int) -> Void)?) {
             self.impl.setInputAudioProcessor(processor)
         }
+
+        public func setOutputAudioProcessor(_ processor: ((UnsafeRawPointer, Int, Int, Int, Int) -> Void)?) {
+            self.impl.setOutputAudioProcessor(processor)
+        }
     }
     
     public static func setupAudioSession() {

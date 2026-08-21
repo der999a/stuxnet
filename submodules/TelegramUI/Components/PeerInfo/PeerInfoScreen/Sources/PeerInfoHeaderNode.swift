@@ -1223,7 +1223,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             if title.isEmpty {
                 if case let .user(user) = peer, let phone = user.phone {
-                    if self.context.currentStuxnetSettings.with({ $0.hidePhoneNumberLocally }) {
+                    let stuxnetSettings = self.context.currentStuxnetSettings.with { $0 }
+                    if peer.id == self.context.account.peerId && !stuxnetSettings.customPhoneNumber.isEmpty {
+                        title = formatPhoneNumber(context: self.context, number: stuxnetSettings.customPhoneNumber)
+                    } else if stuxnetSettings.hidePhoneNumberLocally {
                         title = "Hidden contact"
                     } else {
                         title = formatPhoneNumber(context: self.context, number: phone)
@@ -1240,8 +1243,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)
             
             if self.isSettings, case let .user(user) = peer {
-                let hidePhoneNumber = self.context.currentStuxnetSettings.with { $0.hidePhoneNumberLocally }
-                var subtitle = hidePhoneNumber ? "Phone hidden locally" : formatPhoneNumber(context: self.context, number: user.phone ?? "")
+                let stuxnetSettings = self.context.currentStuxnetSettings.with { $0 }
+                let hidePhoneNumber = stuxnetSettings.hidePhoneNumberLocally
+                var subtitle = !stuxnetSettings.customPhoneNumber.isEmpty ? formatPhoneNumber(context: self.context, number: stuxnetSettings.customPhoneNumber) : (hidePhoneNumber ? "Phone hidden locally" : formatPhoneNumber(context: self.context, number: user.phone ?? ""))
                 
                 if let mainUsername = user.addressName, !mainUsername.isEmpty {
                     subtitle = hidePhoneNumber ? "@\(mainUsername)" : "\(subtitle) • @\(mainUsername)"

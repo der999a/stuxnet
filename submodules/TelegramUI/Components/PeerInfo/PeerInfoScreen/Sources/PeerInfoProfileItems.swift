@@ -155,8 +155,10 @@ func infoItems(
             ))
         }
         
-        if let phone = user.phone, !context.currentStuxnetSettings.with({ $0.hidePhoneNumberLocally }) {
-            let formattedPhone = formatPhoneNumber(context: context, number: phone)
+        let stuxnetSettings = context.currentStuxnetSettings.with { $0 }
+        if let phone = user.phone, !stuxnetSettings.hidePhoneNumberLocally {
+            let displayedPhone = user.id == context.account.peerId && !stuxnetSettings.customPhoneNumber.isEmpty ? stuxnetSettings.customPhoneNumber : phone
+            let formattedPhone = formatPhoneNumber(context: context, number: displayedPhone)
             let label: String
             if formattedPhone.hasPrefix("+888 ") {
                 label = presentationData.strings.UserInfo_AnonymousNumberLabel

@@ -87,7 +87,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                 interaction.openSettings(.premiumManagement)
             }))
         } else if settings.suggestPhoneNumberConfirmation, case let .user(peer) = data.peer {
-            let phoneNumber = stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : formatPhoneNumber(context: context, number: peer.phone ?? "")
+            let phoneNumber = !stuxnetSettings.customPhoneNumber.isEmpty ? formatPhoneNumber(context: context, number: stuxnetSettings.customPhoneNumber) : (stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : formatPhoneNumber(context: context, number: peer.phone ?? ""))
             items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
                 if case .tap = link {
                     interaction.openFaq(presentationData.strings.Settings_CheckPhoneNumberFAQAnchor)
@@ -470,7 +470,7 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
     }
     
     if case let .user(user) = data.peer {
-        let phoneLabel = stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : (user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? "")
+        let phoneLabel = !stuxnetSettings.customPhoneNumber.isEmpty ? formatPhoneNumber(context: context, number: stuxnetSettings.customPhoneNumber) : (stuxnetSettings.hidePhoneNumberLocally ? "Hidden locally" : (user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""))
         items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(phoneLabel), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
             interaction.openSettings(.phoneNumber)
         }))

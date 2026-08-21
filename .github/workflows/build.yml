@@ -105,6 +105,7 @@ jobs:
               Path("submodules/TelegramCore/Sources/Settings/StuxnetSettings.swift"),
               Path("submodules/SettingsUI/Sources/Stuxnet/StuxnetGhostModeController.swift"),
               Path("submodules/SettingsUI/Sources/Stuxnet/StuxnetSettingsController.swift"),
+              Path("submodules/TelegramCallsUI/Sources/StuxnetCallAudioRecorder.swift"),
           ]
           missing_sources = [str(path) for path in required_sources if not path.is_file()]
           if missing_sources:
@@ -137,6 +138,8 @@ jobs:
             find submodules/SettingsUI/Sources/Stuxnet -type f -name '*.swift' -print
             printf '%s\n' \
               submodules/AccountContext/Sources/VoiceLabProcessor.swift \
+              submodules/TelegramCallsUI/Sources/SharedCallAudioContext.swift \
+              submodules/TelegramCallsUI/Sources/StuxnetCallAudioRecorder.swift \
               submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift \
               submodules/TelegramCore/Sources/Settings/StuxnetSettings.swift \
               submodules/TelegramCore/Sources/SecretChats/UpdateSecretChat.swift \
@@ -147,7 +150,8 @@ jobs:
               submodules/TelegramCore/Sources/State/ProcessSecretChatIncomingDecryptedOperations.swift \
               submodules/TelegramCore/Sources/SyncCore/StuxnetMessageAttributes.swift \
               submodules/TelegramCore/Sources/TelegramEngine/Peers/UpdateCachedPeerData.swift \
-              submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+              submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift \
+              submodules/TelegramVoip/Sources/OngoingCallContext.swift
           )
 
       - name: Compile and run Voice Lab smoke test

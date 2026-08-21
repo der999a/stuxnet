@@ -37,10 +37,12 @@ private final class StuxnetSettingsControllerArguments {
     let updateVoiceLabApplyToVoiceMessages: (Bool) -> Void
     let updateVoiceLabApplyToRoundVideos: (Bool) -> Void
     let updateVoiceLabApplyToCalls: (Bool) -> Void
+    let updateRecordCallsToSavedMessages: (Bool) -> Void
     let updateDeletedMessageLabel: (String) -> Void
     let updateDimDeletedMessages: (Bool) -> Void
     let updateLocalProfileEffects: (Bool) -> Void
     let updateHidePhoneNumberLocally: (Bool) -> Void
+    let updateCustomPhoneNumber: (String) -> Void
     let updateCompactChatList: (Bool) -> Void
     let updateShowMessageSeconds: (Bool) -> Void
     let updateShowMessageDate: (Bool) -> Void
@@ -93,10 +95,12 @@ private final class StuxnetSettingsControllerArguments {
         updateVoiceLabApplyToVoiceMessages: @escaping (Bool) -> Void,
         updateVoiceLabApplyToRoundVideos: @escaping (Bool) -> Void,
         updateVoiceLabApplyToCalls: @escaping (Bool) -> Void,
+        updateRecordCallsToSavedMessages: @escaping (Bool) -> Void,
         updateDeletedMessageLabel: @escaping (String) -> Void,
         updateDimDeletedMessages: @escaping (Bool) -> Void,
         updateLocalProfileEffects: @escaping (Bool) -> Void,
         updateHidePhoneNumberLocally: @escaping (Bool) -> Void,
+        updateCustomPhoneNumber: @escaping (String) -> Void,
         updateCompactChatList: @escaping (Bool) -> Void,
         updateShowMessageSeconds: @escaping (Bool) -> Void,
         updateShowMessageDate: @escaping (Bool) -> Void,
@@ -148,10 +152,12 @@ private final class StuxnetSettingsControllerArguments {
         self.updateVoiceLabApplyToVoiceMessages = updateVoiceLabApplyToVoiceMessages
         self.updateVoiceLabApplyToRoundVideos = updateVoiceLabApplyToRoundVideos
         self.updateVoiceLabApplyToCalls = updateVoiceLabApplyToCalls
+        self.updateRecordCallsToSavedMessages = updateRecordCallsToSavedMessages
         self.updateDeletedMessageLabel = updateDeletedMessageLabel
         self.updateDimDeletedMessages = updateDimDeletedMessages
         self.updateLocalProfileEffects = updateLocalProfileEffects
         self.updateHidePhoneNumberLocally = updateHidePhoneNumberLocally
+        self.updateCustomPhoneNumber = updateCustomPhoneNumber
         self.updateCompactChatList = updateCompactChatList
         self.updateShowMessageSeconds = updateShowMessageSeconds
         self.updateShowMessageDate = updateShowMessageDate
@@ -225,6 +231,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
     case voiceLabApplyToVoiceMessages(Bool)
     case voiceLabApplyToRoundVideos(Bool)
     case voiceLabApplyToCalls(Bool)
+    case recordCallsToSavedMessages(Bool)
     case recordRoundVideosWithRearCamera(Bool)
     case voiceLabInfo
     case appearanceHeader
@@ -239,6 +246,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
     case profileHeader
     case localProfileEffects(Bool)
     case hidePhoneNumberLocally(Bool)
+    case customPhoneNumber(String)
     case localStarsBalance(String)
     case localTonBalance(String)
     case manageGifts(Int)
@@ -265,11 +273,11 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
             return StuxnetSettingsSection.messages.rawValue
         case .confirmationsHeader, .confirmMessageSending, .confirmMediaSending, .confirmChannelSubscriptions, .confirmCalls, .confirmStoryReplies, .confirmStoryReactions:
             return StuxnetSettingsSection.confirmations.rawValue
-        case .voiceLabHeader, .voiceLabEnabled, .voiceLabPreset, .voiceLabPitchSemitones, .voiceLabTone, .voiceLabRobotMix, .voiceLabGainDb, .voiceLabApplyToVoiceMessages, .voiceLabApplyToRoundVideos, .voiceLabApplyToCalls, .recordRoundVideosWithRearCamera, .voiceLabInfo:
+        case .voiceLabHeader, .voiceLabEnabled, .voiceLabPreset, .voiceLabPitchSemitones, .voiceLabTone, .voiceLabRobotMix, .voiceLabGainDb, .voiceLabApplyToVoiceMessages, .voiceLabApplyToRoundVideos, .voiceLabApplyToCalls, .recordCallsToSavedMessages, .recordRoundVideosWithRearCamera, .voiceLabInfo:
             return StuxnetSettingsSection.voiceLab.rawValue
         case .appearanceHeader, .chatsAppearance, .compactChatList, .showMessageSeconds, .showMessageDate, .showChatListSeconds, .showChatListDate, .useEnglishMonthNames, .appearanceInfo:
             return StuxnetSettingsSection.appearance.rawValue
-        case .profileHeader, .localProfileEffects, .hidePhoneNumberLocally, .localStarsBalance, .localTonBalance, .manageGifts, .installDemoGifts, .featuredGiftInfo, .featuredGiftTitle, .featuredGiftModel, .featuredGiftSymbol, .featuredGiftNumber, .featuredGiftBackground, .featuredGiftColor, .featuredGiftVisible, .featuredGiftPinned, .clearLocalGifts, .profileInfo:
+        case .profileHeader, .localProfileEffects, .hidePhoneNumberLocally, .customPhoneNumber, .localStarsBalance, .localTonBalance, .manageGifts, .installDemoGifts, .featuredGiftInfo, .featuredGiftTitle, .featuredGiftModel, .featuredGiftSymbol, .featuredGiftNumber, .featuredGiftBackground, .featuredGiftColor, .featuredGiftVisible, .featuredGiftPinned, .clearLocalGifts, .profileInfo:
             return StuxnetSettingsSection.profile.rawValue
         }
     }
@@ -344,6 +352,8 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         case .featuredGiftPinned: return 71
         case .clearLocalGifts: return 72
         case .profileInfo: return 73
+        case .recordCallsToSavedMessages: return 74
+        case .customPhoneNumber: return 75
         }
     }
 
@@ -432,10 +442,12 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Apply to round videos", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateVoiceLabApplyToRoundVideos)
         case let .voiceLabApplyToCalls(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Apply to calls and voice chats", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateVoiceLabApplyToCalls)
+        case let .recordCallsToSavedMessages(value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Record call audio to Saved Messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateRecordCallsToSavedMessages)
         case let .recordRoundVideosWithRearCamera(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Start round videos with rear camera", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateRecordRoundVideosWithRearCamera)
         case .voiceLabInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Voice Lab processes outgoing PCM before Telegram encodes voice messages, story voice replies, round videos, calls and voice chats. Each destination can be disabled independently. Anonymous presets add time-varying and nonlinear privacy masking, but no filter can guarantee anonymity against every analysis method."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain("Voice Lab processes outgoing PCM before Telegram encodes voice messages, story voice replies, round videos, calls and voice chats. Call recording captures both sides as audio and sends the finished WAV to Saved Messages. Enable it only with every participant's consent."), sectionId: self.section)
         case .appearanceHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "APPEARANCE", sectionId: self.section)
         case .chatsAppearance:
@@ -460,6 +472,8 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Profile decorations", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateLocalProfileEffects)
         case let .hidePhoneNumberLocally(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Hide phone numbers locally", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateHidePhoneNumberLocally)
+        case let .customPhoneNumber(value):
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Custom phone", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "+8880000000", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateCustomPhoneNumber, action: {})
         case let .localStarsBalance(value):
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Local Stars", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "0", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateLocalStarsBalance, action: {})
         case let .localTonBalance(value):
@@ -556,6 +570,7 @@ private func stuxnetSettingsEntries(settings: StuxnetSettings) -> [StuxnetSettin
         .voiceLabApplyToVoiceMessages(settings.voiceLabApplyToVoiceMessages),
         .voiceLabApplyToRoundVideos(settings.voiceLabApplyToRoundVideos),
         .voiceLabApplyToCalls(settings.voiceLabApplyToCalls),
+        .recordCallsToSavedMessages(settings.recordCallsToSavedMessages),
         .recordRoundVideosWithRearCamera(settings.recordRoundVideosWithRearCamera),
         .voiceLabInfo,
         .appearanceHeader,
@@ -564,6 +579,7 @@ private func stuxnetSettingsEntries(settings: StuxnetSettings) -> [StuxnetSettin
         .profileHeader,
         .localProfileEffects(settings.localProfileEffects),
         .hidePhoneNumberLocally(settings.hidePhoneNumberLocally),
+        .customPhoneNumber(settings.customPhoneNumber),
         .localStarsBalance("\(settings.localStarsBalance)"),
         .localTonBalance(String(format: "%.9f", Double(settings.localTonBalanceNano) / 1_000_000_000.0).replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression).replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)),
         .manageGifts(settings.localGifts.count),
@@ -683,12 +699,14 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
         updateVoiceLabApplyToVoiceMessages: { value in update { $0.voiceLabApplyToVoiceMessages = value } },
         updateVoiceLabApplyToRoundVideos: { value in update { $0.voiceLabApplyToRoundVideos = value } },
         updateVoiceLabApplyToCalls: { value in update { $0.voiceLabApplyToCalls = value } },
+        updateRecordCallsToSavedMessages: { value in update { $0.recordCallsToSavedMessages = value } },
         updateDeletedMessageLabel: { value in
             update { $0.deletedMessageLabel = String(value.prefix(24)) }
         },
         updateDimDeletedMessages: { value in update { $0.dimDeletedMessages = value } },
         updateLocalProfileEffects: { value in update { $0.localProfileEffects = value } },
         updateHidePhoneNumberLocally: { value in update { $0.hidePhoneNumberLocally = value } },
+        updateCustomPhoneNumber: { value in update { $0.customPhoneNumber = String(value.filter { $0.isNumber || $0 == "+" }.prefix(24)) } },
         updateCompactChatList: { value in update { $0.compactChatList = value } },
         updateShowMessageSeconds: { value in update { $0.showMessageSeconds = value } },
         updateShowMessageDate: { value in update { $0.showMessageDate = value } },

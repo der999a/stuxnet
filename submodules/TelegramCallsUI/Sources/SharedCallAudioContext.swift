@@ -40,6 +40,11 @@ private final class VoiceLabCallAudioProcessor {
     }
 }
 
+private struct StuxnetCallAudioConfiguration: Equatable {
+    let voiceLab: VoiceLabConfiguration
+    let recordToSavedMessages: Bool
+}
+
 func stuxnetCallVoiceLabConfiguration(context: AccountContext) -> VoiceLabConfiguration {
     let settings = context.currentStuxnetSettings.with { $0 }
     return VoiceLabConfiguration(
@@ -65,6 +70,9 @@ public final class SharedCallAudioContext {
     private var isAudioSessionActiveDisposable: Disposable?
     private var audioOutputStateDisposable: Disposable?
     private var voiceLabSettingsDisposable: Disposable?
+    private var voiceLabProcessor: VoiceLabCallAudioProcessor?
+    private var callRecorder: StuxnetCallAudioRecorder?
+    private var recordingAccount: Account?
     
     private(set) var audioSessionControl: ManagedAudioSessionControl?
     
@@ -96,32 +104,94 @@ public final class SharedCallAudioContext {
     }
 
     func configureVoiceLab(_ configuration: VoiceLabConfiguration) {
-        guard VoiceLabProcessor.isActive(configuration) else {
+        self.voiceLabProcessor = VoiceLabProcessor.isActive(configuration) ? VoiceLabCallAudioProcessor(configuration: configuration) : nil
+        self.updateStuxnetAudioProcessors()
+    }
+
+    private func configureRecording(_ enabled: Bool, account: Account) {
+        self.recordingAccount = account
+        if enabled {
+            if self.callRecorder == nil {
+                self.callRecorder = StuxnetCallAudioRecorder()
+            }
+        } else {
+            self.finishRecording()
+        }
+        self.updateStuxnetAudioProcessors()
+    }
+
+    private func updateStuxnetAudioProcessors() {
+        let voiceLabProcessor = self.voiceLabProcessor
+        let recorder = self.callRecorder
+        if voiceLabProcessor == nil && recorder == nil {
             self.audioDevice?.setInputAudioProcessor(nil)
+        } else {
+            self.audioDevice?.setInputAudioProcessor { samples, frameCount, bytesPerSample, channelCount, sampleRate in
+                voiceLabProcessor?.process(samples: samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
+                recorder?.appendMicrophone(samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
+            }
+        }
+        if let recorder {
+            self.audioDevice?.setOutputAudioProcessor { samples, frameCount, bytesPerSample, channelCount, sampleRate in
+                recorder.appendRemote(samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
+            }
+        } else {
+            self.audioDevice?.setOutputAudioProcessor(nil)
+        }
+    }
+
+    private func finishRecording() {
+        guard let recorder = self.callRecorder else {
             return
         }
-        let processor = VoiceLabCallAudioProcessor(configuration: configuration)
-        self.audioDevice?.setInputAudioProcessor { samples, frameCount, bytesPerSample, channelCount, sampleRate in
-            processor.process(samples: samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
+        self.callRecorder = nil
+        let account = self.recordingAccount
+        recorder.finish { path, duration in
+            guard let account,
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+                  let fileSize = attributes[.size] as? NSNumber else {
+                return
+            }
+            let id = Int64.random(in: Int64.min ... Int64.max)
+            let fileName = (path as NSString).lastPathComponent
+            let resource = LocalFileReferenceMediaResource(localFilePath: path, randomId: id)
+            let media = TelegramMediaFile(
+                fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: id),
+                partialReference: nil,
+                resource: resource,
+                previewRepresentations: [],
+                videoThumbnails: [],
+                immediateThumbnailData: nil,
+                mimeType: "audio/wav",
+                size: fileSize.int64Value,
+                attributes: [.FileName(fileName: fileName), .Audio(isVoice: false, duration: duration, title: "Call recording", performer: "Stuxnet", waveform: nil)],
+                alternativeRepresentations: []
+            )
+            let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
+            let _ = enqueueMessages(account: account, peerId: account.peerId, messages: [message]).startStandalone()
         }
     }
 
     func observeVoiceLab(context: AccountContext) {
         self.voiceLabSettingsDisposable?.dispose()
         self.voiceLabSettingsDisposable = (stuxnetSettings(postbox: context.account.postbox)
-        |> map { settings -> VoiceLabConfiguration in
-            return VoiceLabConfiguration(
-                isEnabled: settings.voiceLabEnabled && settings.voiceLabApplyToCalls,
-                preset: settings.voiceLabPreset,
-                pitchSemitones: Float(settings.voiceLabPitchSemitones),
-                tone: Float(settings.voiceLabTone) / 100.0,
-                robotMix: Float(settings.voiceLabRobotMix) / 100.0,
-                gainDb: Float(settings.voiceLabGainDb)
+        |> map { settings -> StuxnetCallAudioConfiguration in
+            return StuxnetCallAudioConfiguration(
+                voiceLab: VoiceLabConfiguration(
+                    isEnabled: settings.voiceLabEnabled && settings.voiceLabApplyToCalls,
+                    preset: settings.voiceLabPreset,
+                    pitchSemitones: Float(settings.voiceLabPitchSemitones),
+                    tone: Float(settings.voiceLabTone) / 100.0,
+                    robotMix: Float(settings.voiceLabRobotMix) / 100.0,
+                    gainDb: Float(settings.voiceLabGainDb)
+                ),
+                recordToSavedMessages: settings.recordCallsToSavedMessages
             )
         }
         |> distinctUntilChanged
         |> deliverOnMainQueue).start(next: { [weak self] configuration in
-            self?.configureVoiceLab(configuration)
+            self?.configureVoiceLab(configuration.voiceLab)
+            self?.configureRecording(configuration.recordToSavedMessages, account: context.account)
         })
     }
     
@@ -277,6 +347,9 @@ public final class SharedCallAudioContext {
     }
     
     deinit {
+        self.audioDevice?.setInputAudioProcessor(nil)
+        self.audioDevice?.setOutputAudioProcessor(nil)
+        self.finishRecording()
         self.audioSessionDisposable?.dispose()
         self.audioSessionShouldBeActiveDisposable?.dispose()
         self.isAudioSessionActiveDisposable?.dispose()

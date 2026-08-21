@@ -52,6 +52,7 @@
 @end
 
 typedef void (^CallAudioInputProcessor)(void * _Nonnull audioSamples, NSInteger sampleCount, NSInteger bytesPerSample, NSInteger channelCount, NSInteger sampleRate);
+typedef void (^CallAudioOutputProcessor)(const void * _Nonnull audioSamples, NSInteger sampleCount, NSInteger bytesPerSample, NSInteger channelCount, NSInteger sampleRate);
 
 @interface SharedCallAudioDevice : NSObject
 
@@ -64,6 +65,7 @@ typedef void (^CallAudioInputProcessor)(void * _Nonnull audioSamples, NSInteger 
 - (void)setTone:(CallAudioTone * _Nullable)tone;
 
 - (void)setInputAudioProcessor:(CallAudioInputProcessor _Nullable)processor;
+- (void)setOutputAudioProcessor:(CallAudioOutputProcessor _Nullable)processor;
 
 @end
 

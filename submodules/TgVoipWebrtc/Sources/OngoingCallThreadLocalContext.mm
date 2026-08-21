@@ -190,6 +190,12 @@ public:
         _mutex.Unlock();
     }
 
+    void SetOutputAudioProcessor(CallAudioOutputProcessor processor) {
+        _mutex.Lock();
+        _outputAudioProcessor = [processor copy];
+        _mutex.Unlock();
+    }
+
     const void *ProcessRecordedAudio(const void *audioSamples, size_t nSamples, size_t nBytesPerSample, size_t nChannels, uint32_t samplesPerSec) {
         if (_inputAudioProcessor == nil || audioSamples == nullptr || nSamples == 0 || nBytesPerSample != sizeof(int16_t) || nChannels == 0) {
             return audioSamples;
@@ -640,6 +646,10 @@ public:
         } else {
             nSamplesOut = 0;
         }
+
+        if (_outputAudioProcessor != nil && audioSamples != nullptr && nSamplesOut != 0 && nBytesPerSample == sizeof(int16_t) && nChannels != 0) {
+            _outputAudioProcessor(audioSamples, (NSInteger)nSamplesOut, (NSInteger)nBytesPerSample, (NSInteger)nChannels, (NSInteger)samplesPerSec);
+        }
         
         _mutex.Unlock();
         
@@ -721,6 +731,7 @@ private:
     webrtc::Mutex _mutex;
     std::vector<int16_t> _mixAudioSamples;
     CallAudioInputProcessor __strong _inputAudioProcessor = nil;
+    CallAudioOutputProcessor __strong _outputAudioProcessor = nil;
     std::vector<int16_t> _processedAudioSamples;
 };
 
@@ -837,6 +848,13 @@ private:
     _audioDeviceModule->perform([processor](tgcalls::SharedAudioDeviceModule *audioDeviceModule) {
         WrappedAudioDeviceModuleIOS *deviceModule = (WrappedAudioDeviceModuleIOS *)audioDeviceModule->audioDeviceModule().get();
         deviceModule->SetInputAudioProcessor(processor);
+    });
+}
+
+- (void)setOutputAudioProcessor:(CallAudioOutputProcessor _Nullable)processor {
+    _audioDeviceModule->perform([processor](tgcalls::SharedAudioDeviceModule *audioDeviceModule) {
+        WrappedAudioDeviceModuleIOS *deviceModule = (WrappedAudioDeviceModuleIOS *)audioDeviceModule->audioDeviceModule().get();
+        deviceModule->SetOutputAudioProcessor(processor);
     });
 }
 

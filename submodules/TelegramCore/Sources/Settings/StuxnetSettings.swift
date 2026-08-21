@@ -333,10 +333,12 @@ public struct StuxnetSettings: Codable, Equatable {
     public var voiceLabApplyToVoiceMessages: Bool
     public var voiceLabApplyToRoundVideos: Bool
     public var voiceLabApplyToCalls: Bool
+    public var recordCallsToSavedMessages: Bool
     public var deletedMessageLabel: String
     public var dimDeletedMessages: Bool
     public var localProfileEffects: Bool
     public var hidePhoneNumberLocally: Bool
+    public var customPhoneNumber: String
     public var compactChatList: Bool
     public var hideChatListAvatars: Bool
     public var hideFastShareButton: Bool
@@ -383,10 +385,12 @@ public struct StuxnetSettings: Codable, Equatable {
         voiceLabApplyToVoiceMessages: true,
         voiceLabApplyToRoundVideos: true,
         voiceLabApplyToCalls: true,
+        recordCallsToSavedMessages: false,
         deletedMessageLabel: "⌫",
         dimDeletedMessages: true,
         localProfileEffects: false,
         hidePhoneNumberLocally: false,
+        customPhoneNumber: "",
         compactChatList: false,
         hideChatListAvatars: false,
         hideFastShareButton: false,
@@ -458,10 +462,12 @@ public struct StuxnetSettings: Codable, Equatable {
         voiceLabApplyToVoiceMessages: Bool,
         voiceLabApplyToRoundVideos: Bool,
         voiceLabApplyToCalls: Bool,
+        recordCallsToSavedMessages: Bool,
         deletedMessageLabel: String,
         dimDeletedMessages: Bool,
         localProfileEffects: Bool,
         hidePhoneNumberLocally: Bool,
+        customPhoneNumber: String,
         compactChatList: Bool,
         hideChatListAvatars: Bool,
         hideFastShareButton: Bool,
@@ -507,10 +513,12 @@ public struct StuxnetSettings: Codable, Equatable {
         self.voiceLabApplyToVoiceMessages = voiceLabApplyToVoiceMessages
         self.voiceLabApplyToRoundVideos = voiceLabApplyToRoundVideos
         self.voiceLabApplyToCalls = voiceLabApplyToCalls
+        self.recordCallsToSavedMessages = recordCallsToSavedMessages
         self.deletedMessageLabel = deletedMessageLabel
         self.dimDeletedMessages = dimDeletedMessages
         self.localProfileEffects = localProfileEffects
         self.hidePhoneNumberLocally = hidePhoneNumberLocally
+        self.customPhoneNumber = customPhoneNumber
         self.compactChatList = compactChatList
         self.hideChatListAvatars = hideChatListAvatars
         self.hideFastShareButton = hideFastShareButton
@@ -558,10 +566,12 @@ public struct StuxnetSettings: Codable, Equatable {
         case voiceLabApplyToVoiceMessages
         case voiceLabApplyToRoundVideos
         case voiceLabApplyToCalls
+        case recordCallsToSavedMessages
         case deletedMessageLabel
         case dimDeletedMessages
         case localProfileEffects
         case hidePhoneNumberLocally
+        case customPhoneNumber
         case compactChatList
         case hideChatListAvatars
         case hideFastShareButton
@@ -612,11 +622,13 @@ public struct StuxnetSettings: Codable, Equatable {
         self.voiceLabApplyToVoiceMessages = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToVoiceMessages) ?? defaults.voiceLabApplyToVoiceMessages
         self.voiceLabApplyToRoundVideos = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToRoundVideos) ?? defaults.voiceLabApplyToRoundVideos
         self.voiceLabApplyToCalls = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToCalls) ?? defaults.voiceLabApplyToCalls
+        self.recordCallsToSavedMessages = try container.decodeIfPresent(Bool.self, forKey: .recordCallsToSavedMessages) ?? defaults.recordCallsToSavedMessages
         let decodedDeletedMessageLabel = try container.decodeIfPresent(String.self, forKey: .deletedMessageLabel) ?? defaults.deletedMessageLabel
         self.deletedMessageLabel = decodedDeletedMessageLabel == "Deleted" ? "⌫" : String(decodedDeletedMessageLabel.prefix(24))
         self.dimDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: .dimDeletedMessages) ?? defaults.dimDeletedMessages
         self.localProfileEffects = try container.decodeIfPresent(Bool.self, forKey: .localProfileEffects) ?? defaults.localProfileEffects
         self.hidePhoneNumberLocally = try container.decodeIfPresent(Bool.self, forKey: .hidePhoneNumberLocally) ?? defaults.hidePhoneNumberLocally
+        self.customPhoneNumber = String((try container.decodeIfPresent(String.self, forKey: .customPhoneNumber) ?? defaults.customPhoneNumber).filter { $0.isNumber || $0 == "+" }.prefix(24))
         self.compactChatList = try container.decodeIfPresent(Bool.self, forKey: .compactChatList) ?? defaults.compactChatList
         self.hideChatListAvatars = try container.decodeIfPresent(Bool.self, forKey: .hideChatListAvatars) ?? defaults.hideChatListAvatars
         self.hideFastShareButton = try container.decodeIfPresent(Bool.self, forKey: .hideFastShareButton) ?? defaults.hideFastShareButton
