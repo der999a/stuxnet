@@ -334,14 +334,47 @@ private func stuxnetGiftPreviewController(context: AccountContext, gift: StarGif
     }
     return GiftViewScreen(
         context: context,
-        subject: .wearPreview(gift, attributes?.isEmpty == false ? attributes : nil),
+        subject: .wearPreview(gift, stuxnetNormalizedGiftPreviewAttributes(gift: gift, attributes: attributes)),
         customAction: customAction
     )
 }
 
+private func stuxnetNormalizedGiftPreviewAttributes(gift: StarGift, attributes: [StarGift.UniqueGift.Attribute]?) -> [StarGift.UniqueGift.Attribute]? {
+    guard case let .unique(uniqueGift) = gift else {
+        return nil
+    }
+    let candidates = attributes?.isEmpty == false ? attributes! : uniqueGift.attributes
+    var model: StarGift.UniqueGift.Attribute?
+    var pattern: StarGift.UniqueGift.Attribute?
+    var backdrop: StarGift.UniqueGift.Attribute?
+    var originalInfo: [StarGift.UniqueGift.Attribute] = []
+    for attribute in candidates {
+        switch attribute {
+        case .model:
+            if model == nil {
+                model = attribute
+            }
+        case .pattern:
+            if pattern == nil {
+                pattern = attribute
+            }
+        case .backdrop:
+            if backdrop == nil {
+                backdrop = attribute
+            }
+        case .originalInfo:
+            originalInfo.append(attribute)
+        }
+    }
+    guard let model, let pattern, let backdrop else {
+        return nil
+    }
+    return [model, pattern, backdrop] + originalInfo
+}
+
 private func stuxnetLocalGiftsEntries(state: StuxnetLocalGiftsState, settings: StuxnetSettings, catalog: [StarGift]) -> [StuxnetLocalGiftsEntry] {
-    let filteredLocalGifts = settings.localGifts.filter { stuxnetLocalGiftMatchesQuery($0, query: state.query) }
-    let filteredCatalog = catalog.filter { stuxnetCatalogGiftMatchesQuery($0, query: state.query) }
+    let filteredLocalGifts = settings.localGifts.enumerated().filter { stuxnetLocalGiftMatchesQuery($0.element, query: state.query) }
+    let filteredCatalog = catalog.enumerated().filter { stuxnetCatalogGiftMatchesQuery($0.element, query: state.query) }
     let hasQuery = !state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     var entries: [StuxnetLocalGiftsEntry] = [
         .search(state.query),
@@ -360,8 +393,8 @@ private func stuxnetLocalGiftsEntries(state: StuxnetLocalGiftsState, settings: S
     if filteredLocalGifts.isEmpty {
         entries.append(.emptyCollection(hasQuery && !settings.localGifts.isEmpty ? "No gifts match this search." : "No gifts yet. Add one by slug, ID or from the catalog below."))
     } else {
-        for (index, gift) in filteredLocalGifts.enumerated() {
-            entries.append(.localGift(Int32(index), gift))
+        for (index, gift) in filteredLocalGifts {
+            entries.append(.localGift(Int32(clamping: index), gift))
         }
         entries.append(.collectionLegend)
     }
@@ -369,8 +402,8 @@ private func stuxnetLocalGiftsEntries(state: StuxnetLocalGiftsState, settings: S
     if filteredCatalog.isEmpty {
         entries.append(.emptyCatalog(hasQuery && !catalog.isEmpty ? "No catalog gifts match this search." : "Catalog is not cached yet. Tap Refresh Telegram catalog while the account is online."))
     } else {
-        for (index, gift) in filteredCatalog.prefix(100).enumerated() {
-            entries.append(.catalogGift(Int32(index), gift))
+        for (index, gift) in filteredCatalog.prefix(100) {
+            entries.append(.catalogGift(Int32(clamping: index), gift))
         }
     }
     entries.append(.catalogInfo)
@@ -537,7 +570,7 @@ public func stuxnetLocalGiftsController(context: AccountContext) -> ViewControll
             presentationData: ItemListPresentationData(presentationData),
             entries: stuxnetLocalGiftsEntries(state: state, settings: settings, catalog: catalog),
             style: .blocks,
-            animateChanges: true
+            animateChanges: false
         )
         return (controllerState, (listState, arguments))
     }
@@ -576,10 +609,11 @@ private final class StuxnetGiftEditorArguments {
     let selectModel: () -> Void
     let selectPattern: () -> Void
     let selectBackdrop: () -> Void
+    let upgradeLocally: () -> Void
     let resetVariants: () -> Void
     let remove: () -> Void
 
-    init(preview: @escaping () -> Void, updateVisible: @escaping (Bool) -> Void, updatePinned: @escaping (Bool) -> Void, updateEquipped: @escaping (Bool) -> Void, updateNumber: @escaping (String) -> Void, updateColor: @escaping (String) -> Void, selectOwner: @escaping () -> Void, selectModel: @escaping () -> Void, selectPattern: @escaping () -> Void, selectBackdrop: @escaping () -> Void, resetVariants: @escaping () -> Void, remove: @escaping () -> Void) {
+    init(preview: @escaping () -> Void, updateVisible: @escaping (Bool) -> Void, updatePinned: @escaping (Bool) -> Void, updateEquipped: @escaping (Bool) -> Void, updateNumber: @escaping (String) -> Void, updateColor: @escaping (String) -> Void, selectOwner: @escaping () -> Void, selectModel: @escaping () -> Void, selectPattern: @escaping () -> Void, selectBackdrop: @escaping () -> Void, upgradeLocally: @escaping () -> Void, resetVariants: @escaping () -> Void, remove: @escaping () -> Void) {
         self.preview = preview
         self.updateVisible = updateVisible
         self.updatePinned = updatePinned
@@ -590,6 +624,7 @@ private final class StuxnetGiftEditorArguments {
         self.selectModel = selectModel
         self.selectPattern = selectPattern
         self.selectBackdrop = selectBackdrop
+        self.upgradeLocally = upgradeLocally
         self.resetVariants = resetVariants
         self.remove = remove
     }
@@ -607,6 +642,7 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
     case pattern(String, Bool)
     case backdrop(String, Bool)
     case color(String, UInt32)
+    case upgrade(Bool)
     case resetVariants
     case ownershipHeader
     case owner(String)
@@ -618,7 +654,7 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
     var section: ItemListSectionId {
         switch self {
         case .header, .preview, .visible, .pinned, .equipped, .number: return 0
-        case .variantsHeader, .model, .pattern, .backdrop, .color, .resetVariants: return 1
+        case .variantsHeader, .model, .pattern, .backdrop, .color, .upgrade, .resetVariants: return 1
         case .ownershipHeader, .owner, .transferHistory: return 2
         case .status, .remove, .info: return 3
         }
@@ -637,7 +673,8 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
         case .pattern: return 12
         case .backdrop: return 13
         case .color: return 14
-        case .resetVariants: return 15
+        case .upgrade: return 15
+        case .resetVariants: return 16
         case .ownershipHeader: return 20
         case .owner: return 21
         case let .transferHistory(index, _): return 100 + index
@@ -666,6 +703,8 @@ private enum StuxnetGiftEditorEntry: ItemListNodeEntry {
             let title = NSMutableAttributedString(string: "●  ", attributes: [.font: Font.semibold(17.0), .foregroundColor: UIColor(rgb: color)])
             title.append(NSAttributedString(string: "Color", attributes: [.font: Font.regular(17.0), .foregroundColor: presentationData.theme.list.itemPrimaryTextColor]))
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: title, text: value, placeholder: "#8B5CF6", type: .regular(capitalization: false, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateColor, action: {})
+        case let .upgrade(enabled):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: enabled ? "Upgrade and reveal appearance" : "Loading upgrade variants…", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: enabled ? arguments.upgradeLocally : nil)
         case .resetVariants: return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: "Reset original appearance", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: arguments.resetVariants)
         case .ownershipHeader: return ItemListSectionHeaderItem(presentationData: presentationData, text: "OWNERSHIP", sectionId: self.section)
         case let .owner(value): return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: "Owner", label: value, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: arguments.selectOwner)
@@ -797,6 +836,9 @@ private func stuxnetGiftEditorEntries(gift: StuxnetLocalGift, state: StuxnetGift
     let hasModel = state.variants.contains { stuxnetAttributeName($0, kind: .model) != nil }
     let hasPattern = state.variants.contains { stuxnetAttributeName($0, kind: .pattern) != nil }
     let hasBackdrop = state.variants.contains { stuxnetAttributeName($0, kind: .backdrop) != nil }
+    if case .generic = gift.sourceGift {
+        entries.append(.upgrade(hasModel && hasPattern && hasBackdrop))
+    }
     entries.append(.model(gift.model, hasModel))
     entries.append(.pattern(gift.symbol, hasPattern))
     entries.append(.backdrop(gift.background, hasBackdrop))
@@ -904,8 +946,8 @@ private func stuxnetLocalGiftEditorController(context: AccountContext, giftId: S
     var dismissImpl: (() -> Void)?
     let arguments = StuxnetGiftEditorArguments(
         preview: {
-            guard let gift = currentGift.with({ $0 }), let sourceGift = gift.sourceGift else { return }
-            presentControllerImpl?(stuxnetGiftPreviewController(context: context, gift: sourceGift, attributes: gift.previewAttributes))
+            guard let gift = currentGift.with({ $0 }), let sourceGift = gift.effectiveSourceGift else { return }
+            presentControllerImpl?(stuxnetGiftPreviewController(context: context, gift: sourceGift, attributes: gift.effectivePreviewAttributes))
         },
         updateVisible: { value in
             updateGift {
@@ -1079,6 +1121,69 @@ private func stuxnetLocalGiftEditorController(context: AccountContext, giftId: S
             let variants = stateValue.with { $0.variants }
             pushControllerImpl?(stuxnetGiftVariantSelectionController(context: context, title: "Backdrop", kind: .backdrop, variants: variants, selectedName: gift.background, select: { applyVariant(.backdrop, attribute: $0) }))
         },
+        upgradeLocally: {
+            guard let gift = currentGift.with({ $0 }), case let .generic(source) = gift.sourceGift else {
+                return
+            }
+            let variants = stateValue.with { $0.variants }
+            let models = variants.filter { stuxnetAttributeName($0, kind: .model) != nil }
+            let patterns = variants.filter { stuxnetAttributeName($0, kind: .pattern) != nil }
+            let backdrops = variants.filter { stuxnetAttributeName($0, kind: .backdrop) != nil }
+            guard let model = models.randomElement(), let pattern = patterns.randomElement(), let backdrop = backdrops.randomElement() else {
+                updateState { current in
+                    var updated = current
+                    updated.status = "Upgrade variants are not available for this gift yet."
+                    return updated
+                }
+                return
+            }
+            let numberUpperBound = max(1, source.availability?.total ?? 999_999)
+            let number = Int32.random(in: 1 ... numberUpperBound)
+            let attributes = [model, pattern, backdrop]
+            let total = source.availability?.total ?? numberUpperBound
+            let issued = max(1, total - (source.availability?.remains ?? 0))
+            let unique = StarGift.UniqueGift(
+                id: source.id ^ Int64(Date().timeIntervalSince1970 * 1000.0),
+                giftId: source.id,
+                title: source.title ?? gift.title,
+                number: number,
+                slug: "Stuxnet-(source.id)-(number)",
+                owner: .peerId(context.account.peerId),
+                attributes: attributes,
+                availability: StarGift.UniqueGift.Availability(issued: issued, total: total),
+                giftAddress: nil,
+                resellAmounts: nil,
+                resellForTonOnly: false,
+                releasedBy: source.releasedBy,
+                valueAmount: nil,
+                valueCurrency: nil,
+                valueUsdAmount: nil,
+                flags: [],
+                themePeerId: nil,
+                peerColor: nil,
+                hostPeerId: nil,
+                minOfferStars: nil,
+                craftChancePermille: nil
+            )
+            updateGift { value in
+                value.sourceGift = .unique(unique)
+                value.previewAttributes = attributes
+                value.number = number
+                value.title = unique.title
+                if let name = stuxnetAttributeName(model, kind: .model) { value.model = name }
+                if let name = stuxnetAttributeName(pattern, kind: .pattern) { value.symbol = name }
+                if let name = stuxnetAttributeName(backdrop, kind: .backdrop) { value.background = name }
+                if case let .backdrop(_, _, _, outerColor, _, _, _) = backdrop {
+                    value.color = UInt32(bitPattern: outerColor)
+                }
+            }
+            updateState { current in
+                var updated = current
+                updated.colorInput = nil
+                updated.status = "Upgrade revealed #(number). Open the animated preview to inspect it."
+                return updated
+            }
+        },
         resetVariants: {
             updateGift { gift in
                 gift.previewAttributes = stuxnetOriginalAttributes(gift)
@@ -1130,7 +1235,7 @@ private func stuxnetLocalGiftEditorController(context: AccountContext, giftId: S
         presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(gift?.title ?? "Gift"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
         let entries: [StuxnetGiftEditorEntry] = gift.map { stuxnetGiftEditorEntries(gift: $0, state: state) } ?? [.status("Gift was removed.")]
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: true)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: false)
         return (controllerState, (listState, arguments))
     }
 

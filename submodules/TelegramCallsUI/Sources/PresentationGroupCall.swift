@@ -978,7 +978,7 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
         }
         
         self.sharedAudioContext = sharedAudioContext
-        self.sharedAudioContext?.configureVoiceLab(stuxnetCallVoiceLabConfiguration(context: accountContext))
+        self.sharedAudioContext?.observeVoiceLab(context: accountContext)
         
         if self.sharedAudioContext == nil && !accountContext.sharedContext.immediateExperimentalUISettings.liveStreamV2 {
             var didReceiveAudioOutputs = false

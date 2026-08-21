@@ -2442,7 +2442,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             }), let sourceGift = localGift.effectiveSourceGift {
                 self.controller?.push(GiftViewScreen(
                     context: self.context,
-                    subject: .wearPreview(sourceGift, localGift.previewAttributes.isEmpty ? nil : localGift.previewAttributes),
+                    subject: .wearPreview(sourceGift, localGift.effectivePreviewAttributes),
                     customAction: GiftViewScreen.CustomAction(title: self.presentationData.strings.Common_Done, action: {})
                 ))
                 return

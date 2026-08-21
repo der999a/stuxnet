@@ -13,6 +13,7 @@ private final class StuxnetSettingsControllerArguments {
     let updateSendOnlinePresence: (Bool) -> Void
     let updateSendUploadProgress: (Bool) -> Void
     let updateSendOfflineAfterOnline: (Bool) -> Void
+    let updateMarkReadAfterAction: (Bool) -> Void
     let updateUseScheduledMessagesInGhostMode: (Bool) -> Void
     let updateGhostSendDelaySeconds: (String) -> Void
     let updateSaveDeletedMessages: (Bool) -> Void
@@ -67,6 +68,7 @@ private final class StuxnetSettingsControllerArguments {
         updateSendOnlinePresence: @escaping (Bool) -> Void,
         updateSendUploadProgress: @escaping (Bool) -> Void,
         updateSendOfflineAfterOnline: @escaping (Bool) -> Void,
+        updateMarkReadAfterAction: @escaping (Bool) -> Void,
         updateUseScheduledMessagesInGhostMode: @escaping (Bool) -> Void,
         updateGhostSendDelaySeconds: @escaping (String) -> Void,
         updateSaveDeletedMessages: @escaping (Bool) -> Void,
@@ -120,6 +122,7 @@ private final class StuxnetSettingsControllerArguments {
         self.updateSendOnlinePresence = updateSendOnlinePresence
         self.updateSendUploadProgress = updateSendUploadProgress
         self.updateSendOfflineAfterOnline = updateSendOfflineAfterOnline
+        self.updateMarkReadAfterAction = updateMarkReadAfterAction
         self.updateUseScheduledMessagesInGhostMode = updateUseScheduledMessagesInGhostMode
         self.updateGhostSendDelaySeconds = updateGhostSendDelaySeconds
         self.updateSaveDeletedMessages = updateSaveDeletedMessages
@@ -188,6 +191,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
     case sendOnlinePresence(Bool)
     case sendUploadProgress(Bool)
     case sendOfflineAfterOnline(Bool)
+    case markReadAfterAction(Bool)
     case useScheduledMessagesInGhostMode(Bool)
     case ghostSendDelaySeconds(String)
     case ghostDetailsInfo
@@ -249,7 +253,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         switch self {
         case .ghostHeader, .ghostMode, .ghostInfo:
             return StuxnetSettingsSection.ghost.rawValue
-        case .ghostDetailsHeader, .sendReadMessages, .sendReadStories, .sendOnlinePresence, .sendUploadProgress, .sendOfflineAfterOnline, .useScheduledMessagesInGhostMode, .ghostSendDelaySeconds, .ghostDetailsInfo:
+        case .ghostDetailsHeader, .sendReadMessages, .sendReadStories, .sendOnlinePresence, .sendUploadProgress, .sendOfflineAfterOnline, .markReadAfterAction, .useScheduledMessagesInGhostMode, .ghostSendDelaySeconds, .ghostDetailsInfo:
             return StuxnetSettingsSection.ghostDetails.rawValue
         case .messagesHeader, .saveDeletedMessages, .saveMessageHistory, .saveForBots, .showMessageDetails, .confirmMessageSending, .confirmMediaSending, .confirmChannelSubscriptions, .confirmCalls, .confirmStoryReplies, .confirmStoryReactions, .deletedMessageLabel, .dimDeletedMessages, .messagesInfo:
             return StuxnetSettingsSection.messages.rawValue
@@ -273,9 +277,10 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         case .sendOnlinePresence: return 13
         case .sendUploadProgress: return 14
         case .sendOfflineAfterOnline: return 15
-        case .useScheduledMessagesInGhostMode: return 16
-        case .ghostSendDelaySeconds: return 17
-        case .ghostDetailsInfo: return 18
+        case .markReadAfterAction: return 16
+        case .useScheduledMessagesInGhostMode: return 17
+        case .ghostSendDelaySeconds: return 18
+        case .ghostDetailsInfo: return 19
         case .messagesHeader: return 20
         case .saveDeletedMessages: return 21
         case .saveMessageHistory: return 22
@@ -357,12 +362,14 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Send upload progress", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSendUploadProgress)
         case let .sendOfflineAfterOnline(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Send offline when hiding", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSendOfflineAfterOnline)
+        case let .markReadAfterAction(value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Mark read after reactions and poll votes", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateMarkReadAfterAction)
         case let .useScheduledMessagesInGhostMode(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Delayed sending in Ghost Mode", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateUseScheduledMessagesInGhostMode)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Queue sends with Telegram Schedule", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateUseScheduledMessagesInGhostMode)
         case let .ghostSendDelaySeconds(value):
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Send delay", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "12", type: .number, spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateGhostSendDelaySeconds, action: {})
         case .ghostDetailsInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Local unread state is updated normally, while disabled network acknowledgements stay on the device. Delayed sending uses Telegram scheduled messages (10–60 seconds) and skips bots, secret chats, slow mode, paid/inline/quick-reply sends and messages already scheduled."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain("Opening a chat still clears its unread badge locally, but disabled receipts are not sent to Telegram. Reactions and poll votes can optionally reveal the read state, matching AyuGram. Queue sends creates a normal Telegram scheduled message for 10–60 seconds, so it can be edited or cancelled from Scheduled Messages."), sectionId: self.section)
         case .messagesHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "MESSAGE HISTORY", sectionId: self.section)
         case let .saveDeletedMessages(value):
@@ -386,7 +393,7 @@ private enum StuxnetSettingsEntry: ItemListNodeEntry {
         case let .confirmStoryReactions(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Confirm story reactions", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateConfirmStoryReactions)
         case let .deletedMessageLabel(value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Deleted label", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "Deleted", type: .regular(capitalization: true, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateDeletedMessageLabel, action: {})
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: "Deleted marker", textColor: presentationData.theme.list.itemPrimaryTextColor), text: value, placeholder: "⌫", type: .regular(capitalization: true, autocorrection: false), spacing: 10.0, sectionId: self.section, textUpdated: arguments.updateDeletedMessageLabel, action: {})
         case let .dimDeletedMessages(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Dim deleted messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateDimDeletedMessages)
         case .messagesInfo:
@@ -508,6 +515,7 @@ private func stuxnetSettingsEntries(settings: StuxnetSettings) -> [StuxnetSettin
         .sendOnlinePresence(settings.sendOnlinePresence),
         .sendUploadProgress(settings.sendUploadProgress),
         .sendOfflineAfterOnline(settings.sendOfflineAfterOnline),
+        .markReadAfterAction(settings.markReadAfterAction),
         .useScheduledMessagesInGhostMode(settings.useScheduledMessagesInGhostMode),
         .ghostSendDelaySeconds("\(settings.ghostSendDelaySeconds)"),
         .ghostDetailsInfo,
@@ -553,6 +561,7 @@ private func stuxnetSettingsEntries(settings: StuxnetSettings) -> [StuxnetSettin
 
 public func stuxnetSettingsController(context: AccountContext) -> ViewController {
     var pushControllerImpl: ((ViewController) -> Void)?
+    var presentControllerImpl: ((ViewController) -> Void)?
     func update(_ f: @escaping (inout StuxnetSettings) -> Void) {
         let _ = updateStuxnetSettingsInteractively(postbox: context.account.postbox, { current in
             var updated = current
@@ -579,6 +588,7 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
         updateSendOnlinePresence: { value in update { $0.sendOnlinePresence = value } },
         updateSendUploadProgress: { value in update { $0.sendUploadProgress = value } },
         updateSendOfflineAfterOnline: { value in update { $0.sendOfflineAfterOnline = value } },
+        updateMarkReadAfterAction: { value in update { $0.markReadAfterAction = value } },
         updateUseScheduledMessagesInGhostMode: { value in update { $0.useScheduledMessagesInGhostMode = value } },
         updateGhostSendDelaySeconds: { value in
             if let seconds = Int32(value), (10 ... 60).contains(seconds) {
@@ -598,53 +608,41 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
         updateRecordRoundVideosWithRearCamera: { value in update { $0.recordRoundVideosWithRearCamera = value } },
         updateVoiceLabEnabled: { value in update { $0.voiceLabEnabled = value } },
         cycleVoiceLabPreset: {
-            update { settings in
-                let presets = ["Natural", "Deep", "Bright", "Robot", "Radio", "Anonymous Deep", "Anonymous Flux"]
-                let preset: String
-                if let currentIndex = presets.firstIndex(of: settings.voiceLabPreset) {
-                    preset = presets[(currentIndex + 1) % presets.count]
-                } else {
-                    preset = presets[0]
-                }
-                settings.voiceLabPreset = preset
-                switch preset {
-                case "Deep":
-                    settings.voiceLabPitchSemitones = -4
-                    settings.voiceLabTone = -30
-                    settings.voiceLabRobotMix = 0
-                    settings.voiceLabGainDb = 1
-                case "Bright":
-                    settings.voiceLabPitchSemitones = 3
-                    settings.voiceLabTone = 35
-                    settings.voiceLabRobotMix = 0
-                    settings.voiceLabGainDb = 0
-                case "Robot":
-                    settings.voiceLabPitchSemitones = 0
-                    settings.voiceLabTone = -5
-                    settings.voiceLabRobotMix = 70
-                    settings.voiceLabGainDb = 0
-                case "Radio":
-                    settings.voiceLabPitchSemitones = 1
-                    settings.voiceLabTone = 60
-                    settings.voiceLabRobotMix = 18
-                    settings.voiceLabGainDb = -1
-                case "Anonymous Deep":
-                    settings.voiceLabPitchSemitones = -7
-                    settings.voiceLabTone = -42
-                    settings.voiceLabRobotMix = 24
-                    settings.voiceLabGainDb = -2
-                case "Anonymous Flux":
-                    settings.voiceLabPitchSemitones = 5
-                    settings.voiceLabTone = 18
-                    settings.voiceLabRobotMix = 38
-                    settings.voiceLabGainDb = -3
-                default:
-                    settings.voiceLabPitchSemitones = 0
-                    settings.voiceLabTone = 0
-                    settings.voiceLabRobotMix = 0
-                    settings.voiceLabGainDb = 0
-                }
+            let presets: [(String, Int32, Int32, Int32, Int32)] = [
+                ("Natural", 0, 0, 0, 0),
+                ("Deep", -4, -30, 0, 1),
+                ("Titan", -8, -52, 8, -1),
+                ("Bright", 3, 35, 0, 0),
+                ("Helium", 7, 48, 0, -2),
+                ("Whisper", 1, -18, 12, 3),
+                ("Robot", 0, -5, 70, 0),
+                ("Synth", -2, 22, 52, -2),
+                ("Radio", 1, 60, 18, -1),
+                ("Anonymous Deep", -7, -42, 24, -2),
+                ("Anonymous Flux", 5, 18, 38, -3)
+            ]
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let actionSheet = ActionSheetController(presentationData: presentationData)
+            var presetItems: [ActionSheetItem] = [ActionSheetTextItem(title: "Choose a voice preset. Fine controls below can be adjusted afterwards.")]
+            for (preset, pitch, tone, robotMix, gain) in presets {
+                presetItems.append(ActionSheetButtonItem(title: preset, color: .accent, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    update { settings in
+                        settings.voiceLabPreset = preset
+                        settings.voiceLabPitchSemitones = pitch
+                        settings.voiceLabTone = tone
+                        settings.voiceLabRobotMix = robotMix
+                        settings.voiceLabGainDb = gain
+                    }
+                }))
             }
+            actionSheet.setItemGroups([
+                ActionSheetItemGroup(items: presetItems),
+                ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })])
+            ])
+            presentControllerImpl?(actionSheet)
         },
         updateVoiceLabPitchSemitones: { value in
             if let parsed = Int32(value), (-12 ... 12).contains(parsed) {
@@ -746,7 +744,7 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
             presentationData: ItemListPresentationData(presentationData),
             entries: stuxnetSettingsEntries(settings: settings),
             style: .blocks,
-            animateChanges: true
+            animateChanges: false
         )
         return (controllerState, (listState, arguments))
     }
@@ -754,6 +752,9 @@ public func stuxnetSettingsController(context: AccountContext) -> ViewController
     let controller = ItemListController(context: context, state: signal)
     pushControllerImpl = { [weak controller] value in
         controller?.push(value)
+    }
+    presentControllerImpl = { [weak controller] value in
+        controller?.present(value, in: .window(.root))
     }
     return controller
 }

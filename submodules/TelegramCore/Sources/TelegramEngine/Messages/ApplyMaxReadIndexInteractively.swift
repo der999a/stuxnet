@@ -3,6 +3,56 @@ import Postbox
 import TelegramApi
 import SwiftSignalKit
 
+private enum StuxnetReadAfterActionTarget {
+    case peer(Api.InputPeer)
+    case channel(Api.InputChannel)
+}
+
+func stuxnetMarkReadAfterAction(postbox: Postbox, network: Network, stateManager: AccountStateManager, messageId: MessageId) -> Signal<Never, NoError> {
+    guard messageId.namespace == Namespaces.Message.Cloud else {
+        return .complete()
+    }
+    return postbox.transaction { transaction -> StuxnetReadAfterActionTarget? in
+        let settings = stuxnetSettings(transaction: transaction)
+        guard !settings.sendReadMessages, settings.markReadAfterAction,
+              let peer = transaction.getPeer(messageId.peerId) else {
+            return nil
+        }
+        if let inputChannel = apiInputChannel(peer) {
+            return .channel(inputChannel)
+        } else if let inputPeer = apiInputPeer(peer) {
+            return .peer(inputPeer)
+        } else {
+            return nil
+        }
+    }
+    |> mapToSignal { target -> Signal<Never, NoError> in
+        guard let target else {
+            return .complete()
+        }
+        switch target {
+        case let .channel(inputChannel):
+            return network.request(Api.functions.channels.readHistory(channel: inputChannel, maxId: messageId.id))
+            |> `catch` { _ -> Signal<Api.Bool, NoError> in
+                return .single(.boolFalse)
+            }
+            |> ignoreValues
+        case let .peer(inputPeer):
+            return network.request(Api.functions.messages.readHistory(peer: inputPeer, maxId: messageId.id))
+            |> map(Optional.init)
+            |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
+                return .single(nil)
+            }
+            |> afterNext { result in
+                if let result, case let .affectedMessages(data) = result {
+                    stateManager.addUpdateGroups([.updatePts(pts: data.pts, ptsCount: data.ptsCount)])
+                }
+            }
+            |> ignoreValues
+        }
+    }
+}
+
 
 func _internal_applyMaxReadIndexInteractively(postbox: Postbox, stateManager: AccountStateManager, index: MessageIndex) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in

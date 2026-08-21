@@ -543,8 +543,8 @@ final class GiftsListView: UIView {
                 
                 switch product.gift {
                 case let .generic(gift):
-                    if let localGift, !localGift.previewAttributes.isEmpty {
-                        subject = .preview(attributes: localGift.previewAttributes, rarity: nil)
+                    if let localGift, let previewAttributes = localGift.effectivePreviewAttributes {
+                        subject = .preview(attributes: previewAttributes, rarity: nil)
                         peer = nil
                     } else {
                         subject = .starGift(gift: gift, price: "# \(gift.price)")
@@ -617,7 +617,7 @@ final class GiftsListView: UIView {
                                 if let localGift, let sourceGift = localGift.effectiveSourceGift {
                                     let controller = GiftViewScreen(
                                         context: self.context,
-                                        subject: .wearPreview(sourceGift, localGift.previewAttributes.isEmpty ? nil : localGift.previewAttributes),
+                                        subject: .wearPreview(sourceGift, localGift.effectivePreviewAttributes),
                                         customAction: GiftViewScreen.CustomAction(title: presentationData.strings.Common_Done, action: {})
                                     )
                                     self.parentController?.push(controller)

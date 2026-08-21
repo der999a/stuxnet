@@ -4279,6 +4279,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     }
                     
                     transition.updateFrame(node: strongSelf.avatarContainerNode, frame: avatarFrame)
+                    strongSelf.avatarContainerNode.isHidden = hideStuxnetChatListAvatar
 
                     if useChatListLayout && isCommunity && avatarContentImageSpec == nil, let shadowImage = UIImage(bundleImageName: "Components/CommunityShadow") {
                         strongSelf.communityAvatarShadowNode.isHidden = false

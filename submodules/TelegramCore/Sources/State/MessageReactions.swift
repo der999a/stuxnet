@@ -396,6 +396,9 @@ private func requestUpdateMessageReaction(postbox: Postbox, network: Network, st
                 })
                 stateManager.addUpdates(result)
             }
+            |> afterNext { _ in
+                stuxnetMarkReadAfterAction(postbox: postbox, network: network, stateManager: stateManager, messageId: messageId).startStandalone()
+            }
             |> castError(RequestUpdateMessageReactionError.self)
             |> ignoreValues
         }
@@ -486,6 +489,9 @@ private func requestSendStarsReaction(postbox: Postbox, network: Network, stateM
                         return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
                     })
                     stateManager.addUpdates(result)
+                }
+                |> afterNext { _ in
+                    stuxnetMarkReadAfterAction(postbox: postbox, network: network, stateManager: stateManager, messageId: messageId).startStandalone()
                 }
                 |> castError(RequestUpdateMessageReactionError.self)
                 |> ignoreValues

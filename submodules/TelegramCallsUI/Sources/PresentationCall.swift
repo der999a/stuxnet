@@ -346,7 +346,7 @@ public final class PresentationCallImpl: PresentationCall {
             self.sharedAudioContext = nil
         } else {
             self.sharedAudioContext = SharedCallAudioContext.get(audioSession: audioSession, callKitIntegration: callKitIntegration, defaultToSpeaker: startWithVideo || initialState?.type == .video)
-            self.sharedAudioContext?.configureVoiceLab(stuxnetCallVoiceLabConfiguration(context: context))
+            self.sharedAudioContext?.observeVoiceLab(context: context)
         }
         
         if let _ = self.sharedAudioContext {

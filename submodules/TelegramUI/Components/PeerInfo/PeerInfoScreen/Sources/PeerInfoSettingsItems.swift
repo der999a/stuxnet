@@ -260,11 +260,14 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             interaction.openSettings(.premium)
         }))
     }
-    if let starsState = data.starsState {
-        if !isPremiumDisabled || abs(starsState.balance.value) > 0 {
+    let displayedStarsBalance: StarsAmount? = stuxnetSettings.localProfileEffects && stuxnetSettings.localStarsBalance != 0
+        ? StarsAmount(value: stuxnetSettings.localStarsBalance, nanos: 0)
+        : data.starsState?.balance
+    if let displayedStarsBalance {
+        if !isPremiumDisabled || displayedStarsBalance.value != 0 || displayedStarsBalance.nanos != 0 {
             let balanceText: NSAttributedString
-            if abs(starsState.balance.value) > 0 {
-                let formattedLabel = formatStarsAmountText(starsState.balance, dateTimeFormat: presentationData.dateTimeFormat)
+            if displayedStarsBalance.value != 0 || displayedStarsBalance.nanos != 0 {
+                let formattedLabel = formatStarsAmountText(displayedStarsBalance, dateTimeFormat: presentationData.dateTimeFormat)
                 let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
                 let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
                 let labelColor = presentationData.theme.list.itemSecondaryTextColor
@@ -277,11 +280,14 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             }))
         }
     }
-    if let tonState = data.tonState {
-        if abs(tonState.balance.value) > 0 {
+    let displayedTonBalance: Int64? = stuxnetSettings.localProfileEffects && stuxnetSettings.localTonBalanceNano != 0
+        ? stuxnetSettings.localTonBalanceNano
+        : data.tonState?.balance.value
+    if let displayedTonBalance {
+        if displayedTonBalance != 0 {
             let balanceText: NSAttributedString
-            if abs(tonState.balance.value) > 0 {
-                let formattedLabel = formatTonAmountText(tonState.balance.value, dateTimeFormat: presentationData.dateTimeFormat)
+            if displayedTonBalance != 0 {
+                let formattedLabel = formatTonAmountText(displayedTonBalance, dateTimeFormat: presentationData.dateTimeFormat)
                 let smallLabelFont = Font.regular(floor(presentationData.listsFontSize.itemListBaseFontSize / 17.0 * 13.0))
                 let labelFont = Font.regular(presentationData.listsFontSize.itemListBaseFontSize)
                 let labelColor = presentationData.theme.list.itemSecondaryTextColor
@@ -295,17 +301,6 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         }
     }
     if stuxnetSettings.localProfileEffects {
-        if stuxnetSettings.localStarsBalance != 0 {
-            items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 1102, label: .text("\(stuxnetSettings.localStarsBalance)"), text: "My Stars", icon: PresentationResourcesSettings.stars, action: {
-                interaction.openSettings(.stuxnet)
-            }))
-        }
-        if stuxnetSettings.localTonBalanceNano != 0 {
-            let formattedTon = formatTonAmountText(stuxnetSettings.localTonBalanceNano, dateTimeFormat: presentationData.dateTimeFormat)
-            items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 1103, label: .text(formattedTon), text: "My TON", icon: PresentationResourcesSettings.ton, action: {
-                interaction.openSettings(.stuxnet)
-            }))
-        }
         let visibleGifts = stuxnetSettings.localGifts.filter {
             $0.visible
                 && $0.sourceGift != nil

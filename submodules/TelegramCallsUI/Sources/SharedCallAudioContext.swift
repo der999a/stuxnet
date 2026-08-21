@@ -4,6 +4,7 @@ import TelegramVoip
 import TelegramAudio
 import DeviceProximity
 import AccountContext
+import TelegramCore
 
 private final class VoiceLabCallAudioProcessor {
     private let configuration: VoiceLabConfiguration
@@ -63,6 +64,7 @@ public final class SharedCallAudioContext {
     private var audioSessionShouldBeActiveDisposable: Disposable?
     private var isAudioSessionActiveDisposable: Disposable?
     private var audioOutputStateDisposable: Disposable?
+    private var voiceLabSettingsDisposable: Disposable?
     
     private(set) var audioSessionControl: ManagedAudioSessionControl?
     
@@ -102,6 +104,25 @@ public final class SharedCallAudioContext {
         self.audioDevice?.setInputAudioProcessor { samples, frameCount, bytesPerSample, channelCount, sampleRate in
             processor.process(samples: samples, frameCount: frameCount, bytesPerSample: bytesPerSample, channelCount: channelCount, sampleRate: sampleRate)
         }
+    }
+
+    func observeVoiceLab(context: AccountContext) {
+        self.voiceLabSettingsDisposable?.dispose()
+        self.voiceLabSettingsDisposable = (stuxnetSettings(postbox: context.account.postbox)
+        |> map { settings -> VoiceLabConfiguration in
+            return VoiceLabConfiguration(
+                isEnabled: settings.voiceLabEnabled && settings.voiceLabApplyToCalls,
+                preset: settings.voiceLabPreset,
+                pitchSemitones: Float(settings.voiceLabPitchSemitones),
+                tone: Float(settings.voiceLabTone) / 100.0,
+                robotMix: Float(settings.voiceLabRobotMix) / 100.0,
+                gainDb: Float(settings.voiceLabGainDb)
+            )
+        }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] configuration in
+            self?.configureVoiceLab(configuration)
+        })
     }
     
     private init(audioSession: ManagedAudioSession, callKitIntegration: CallKitIntegration?, defaultToSpeaker: Bool = false, enableMicrophone: Bool = true) {
@@ -260,6 +281,7 @@ public final class SharedCallAudioContext {
         self.audioSessionShouldBeActiveDisposable?.dispose()
         self.isAudioSessionActiveDisposable?.dispose()
         self.audioOutputStateDisposable?.dispose()
+        self.voiceLabSettingsDisposable?.dispose()
         self.initialSetupTimer?.invalidate()
         
         if let proximityManagerIndex = self.proximityManagerIndex {

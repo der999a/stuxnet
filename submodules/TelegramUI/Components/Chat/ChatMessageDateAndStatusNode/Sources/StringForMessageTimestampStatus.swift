@@ -270,7 +270,7 @@ public func stringForMessageTimestampStatus(
 
     if message.attributes.contains(where: { $0 is StuxnetDeletedMessageAttribute }) {
         let configuredLabel = stuxnetSettings.deletedMessageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        dateText = "\(configuredLabel.isEmpty ? "Deleted" : configuredLabel) · \(dateText)"
+        dateText = "\(configuredLabel.isEmpty ? "⌫" : configuredLabel) · \(dateText)"
     }
     
     return dateText

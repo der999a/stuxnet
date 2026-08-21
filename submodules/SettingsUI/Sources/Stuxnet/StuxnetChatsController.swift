@@ -176,7 +176,7 @@ private enum StuxnetChatsEntry: ItemListNodeEntry {
         case let .customBubbleRadius(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Custom bubble radius", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateCustomBubbleRadiusEnabled)
         case let .bubbleRadius(value, enabled):
-            return BubbleSettingsRadiusItem(theme: presentationData.theme, value: Int(value), enabled: enabled, displayIcons: false, force: false, sectionId: self.section, updated: arguments.updateBubbleRadius)
+            return BubbleSettingsRadiusItem(theme: presentationData.theme, value: Int(value), enabled: enabled, disableLeadingInset: false, displayIcons: false, disableDecorations: true, force: false, sectionId: self.section, updated: arguments.updateBubbleRadius)
         case let .removeMessageTails(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Remove message tails", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateRemoveMessageTails)
         case let .hideFastShareButton(value):
@@ -308,7 +308,7 @@ public func stuxnetChatsController(context: AccountContext) -> ViewController {
             presentationData: ItemListPresentationData(listPresentationData),
             entries: stuxnetChatsEntries(settings: settings, presentationData: presentationData),
             style: .blocks,
-            animateChanges: true
+            animateChanges: false
         )
         return (controllerState, (listState, arguments))
     }

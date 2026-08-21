@@ -117,6 +117,9 @@ func _internal_requestMessageSelectPollOption(account: Account, messageId: Messa
                     account.stateManager.addUpdates(result)
                     return resultPoll
                 }
+                |> afterNext { _ in
+                    stuxnetMarkReadAfterAction(postbox: account.postbox, network: account.network, stateManager: account.stateManager, messageId: messageId).startStandalone()
+                }
                 |> castError(RequestMessageSelectPollOptionError.self)
             }
         } else {

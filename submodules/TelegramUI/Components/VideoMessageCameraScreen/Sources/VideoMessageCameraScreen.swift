@@ -84,11 +84,19 @@ private final class VoiceLabCameraAudioProcessor {
         let sampleRate = Float(description.mSampleRate)
         let channelCount = max(1, Int(description.mChannelsPerFrame))
         let isFloat = (description.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isSignedInteger = (description.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
+        let isBigEndian = (description.mFormatFlags & kAudioFormatFlagIsBigEndian) != 0
+        let isNonInterleaved = (description.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+        guard !isBigEndian else {
+            return
+        }
         let bytesPerSample: Int
         if isFloat && description.mBitsPerChannel == 32 {
             bytesPerSample = MemoryLayout<Float>.size
-        } else if !isFloat && description.mBitsPerChannel == 16 {
+        } else if isSignedInteger && description.mBitsPerChannel == 16 {
             bytesPerSample = MemoryLayout<Int16>.size
+        } else if isSignedInteger && description.mBitsPerChannel == 32 {
+            bytesPerSample = MemoryLayout<Int32>.size
         } else {
             return
         }
@@ -134,8 +142,9 @@ private final class VoiceLabCameraAudioProcessor {
                 continue
             }
             let channelsInBuffer = max(1, Int(buffer.mNumberChannels))
-            let valueCount = Int(buffer.mDataByteSize) / bytesPerSample
-            let frameCount = valueCount / channelsInBuffer
+            let describedBytesPerFrame = max(bytesPerSample, Int(description.mBytesPerFrame))
+            let frameStride = isNonInterleaved ? 1 : max(channelsInBuffer, describedBytesPerFrame / bytesPerSample)
+            let frameCount = Int(buffer.mDataByteSize) / (frameStride * bytesPerSample)
             guard frameCount > 0 else {
                 channelBase += channelsInBuffer
                 continue
@@ -146,13 +155,19 @@ private final class VoiceLabCameraAudioProcessor {
                     self.channelProcessors[processorIndex].processFloat32(
                         samples: data.assumingMemoryBound(to: Float.self).advanced(by: channel),
                         frameCount: frameCount,
-                        stride: channelsInBuffer
+                        stride: frameStride
                     )
-                } else {
+                } else if description.mBitsPerChannel == 16 {
                     self.channelProcessors[processorIndex].processInt16(
                         samples: data.assumingMemoryBound(to: Int16.self).advanced(by: channel),
                         frameCount: frameCount,
-                        stride: channelsInBuffer
+                        stride: frameStride
+                    )
+                } else {
+                    self.channelProcessors[processorIndex].processInt32(
+                        samples: data.assumingMemoryBound(to: Int32.self).advanced(by: channel),
+                        frameCount: frameCount,
+                        stride: frameStride
                     )
                 }
             }

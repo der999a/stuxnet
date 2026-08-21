@@ -570,7 +570,7 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
 }
 
 private func stuxnetMessageWithGhostSchedule(transaction: Transaction, account: Account, peerId: PeerId, message: EnqueueMessage, settings: StuxnetSettings) -> EnqueueMessage {
-    guard settings.isGhostModeEnabled, settings.useScheduledMessagesInGhostMode else {
+    guard settings.useScheduledMessagesInGhostMode, settings.isGhostModeEnabled else {
         return message
     }
     guard peerId != account.peerId else {
@@ -591,11 +591,15 @@ private func stuxnetMessageWithGhostSchedule(transaction: Transaction, account: 
     if let cachedChannelData = transaction.getPeerCachedData(peerId: peerId) as? CachedChannelData, cachedChannelData.slowModeTimeout != nil {
         return message
     }
-    guard case let .message(_, attributes, _, mediaReference, _, _, replyToStoryId, _, _, _) = message else {
-        return message
-    }
-    if replyToStoryId != nil || mediaReference?.media is TelegramMediaAction {
-        return message
+    let attributes: [MessageAttribute]
+    switch message {
+    case let .message(_, messageAttributes, _, mediaReference, _, _, replyToStoryId, _, _, _):
+        if replyToStoryId != nil || mediaReference?.media is TelegramMediaAction {
+            return message
+        }
+        attributes = messageAttributes
+    case let .forward(_, _, _, forwardAttributes, _):
+        attributes = forwardAttributes
     }
     if attributes.contains(where: { attribute in
         return attribute is OutgoingScheduleInfoMessageAttribute

@@ -6886,7 +6886,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
             let corners = stuxnetChatBubbleCorners(settings: settings, fallback: strongSelf.presentationData.chatBubbleCorners)
             if strongSelf.presentationInterfaceState.bubbleCorners != corners {
-                strongSelf.updateChatPresentationInterfaceState(animated: true, interactive: false, { state in
+                strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: false, { state in
                     return state.updatedBubbleCorners(corners)
                 })
             }

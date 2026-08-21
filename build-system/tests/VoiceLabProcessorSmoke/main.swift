@@ -47,6 +47,29 @@ int16Samples.withUnsafeMutableBufferPointer { buffer in
 }
 require(int16Samples != originalInt16Samples, "Int16 Voice Lab output must differ from its input")
 
+let deepConfiguration = VoiceLabConfiguration(
+    isEnabled: true,
+    preset: "Deep",
+    pitchSemitones: -4.0,
+    tone: -0.3,
+    robotMix: 0.0,
+    gainDb: 1.0
+)
+var int32StereoSamples = [Int32](repeating: 0, count: frameCount * 2)
+for frame in 0 ..< frameCount {
+    let leftPhase = 2.0 * Float.pi * 180.0 * Float(frame) / sampleRate
+    let rightPhase = 2.0 * Float.pi * 440.0 * Float(frame) / sampleRate
+    int32StereoSamples[frame * 2] = Int32((sinf(leftPhase) * 900_000_000.0).rounded())
+    int32StereoSamples[frame * 2 + 1] = Int32((sinf(rightPhase) * 700_000_000.0).rounded())
+}
+let originalInt32StereoSamples = int32StereoSamples
+let int32Processor = VoiceLabProcessor(configuration: deepConfiguration, sampleRate: sampleRate)
+int32StereoSamples.withUnsafeMutableBufferPointer { buffer in
+    int32Processor.processInt32(samples: buffer.baseAddress!, frameCount: frameCount, stride: 2)
+}
+require(stride(from: 0, to: int32StereoSamples.count, by: 2).contains { int32StereoSamples[$0] != originalInt32StereoSamples[$0] }, "Int32 Deep output must change the selected interleaved channel")
+require(stride(from: 1, to: int32StereoSamples.count, by: 2).allSatisfy { int32StereoSamples[$0] == originalInt32StereoSamples[$0] }, "Strided Int32 processing must not modify adjacent channels")
+
 var floatSamples = (0 ..< frameCount).map { index -> Float in
     if index == 37 {
         return .nan

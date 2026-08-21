@@ -146,11 +146,48 @@ public struct StuxnetLocalGift: Codable, Equatable {
         }
     }
 
+    private static func normalizedPreviewAttributes(_ attributes: [StarGift.UniqueGift.Attribute]) -> [StarGift.UniqueGift.Attribute]? {
+        var model: StarGift.UniqueGift.Attribute?
+        var pattern: StarGift.UniqueGift.Attribute?
+        var backdrop: StarGift.UniqueGift.Attribute?
+        var originalInfo: [StarGift.UniqueGift.Attribute] = []
+        for attribute in attributes {
+            switch attribute {
+            case .model:
+                if model == nil {
+                    model = attribute
+                }
+            case .pattern:
+                if pattern == nil {
+                    pattern = attribute
+                }
+            case .backdrop:
+                if backdrop == nil {
+                    backdrop = attribute
+                }
+            case .originalInfo:
+                originalInfo.append(attribute)
+            }
+        }
+        guard let model, let pattern, let backdrop else {
+            return nil
+        }
+        return [model, pattern, backdrop] + originalInfo
+    }
+
+    public var effectivePreviewAttributes: [StarGift.UniqueGift.Attribute]? {
+        guard case .unique = self.sourceGift else {
+            return nil
+        }
+        return Self.normalizedPreviewAttributes(self.previewAttributes)
+    }
+
     public var effectiveSourceGift: StarGift? {
         guard let sourceGift = self.sourceGift else {
             return nil
         }
-        guard !self.previewAttributes.isEmpty, case let .unique(value) = sourceGift else {
+        guard case let .unique(value) = sourceGift,
+              let previewAttributes = self.effectivePreviewAttributes else {
             return sourceGift
         }
         return .unique(StarGift.UniqueGift(
@@ -160,7 +197,7 @@ public struct StuxnetLocalGift: Codable, Equatable {
             number: self.number ?? value.number,
             slug: value.slug,
             owner: value.owner,
-            attributes: self.previewAttributes,
+            attributes: previewAttributes,
             availability: value.availability,
             giftAddress: value.giftAddress,
             resellAmounts: value.resellAmounts,
@@ -344,7 +381,7 @@ public struct StuxnetSettings: Codable, Equatable {
         voiceLabApplyToVoiceMessages: true,
         voiceLabApplyToRoundVideos: true,
         voiceLabApplyToCalls: true,
-        deletedMessageLabel: "Deleted",
+        deletedMessageLabel: "⌫",
         dimDeletedMessages: true,
         localProfileEffects: false,
         hidePhoneNumberLocally: false,
@@ -369,9 +406,6 @@ public struct StuxnetSettings: Codable, Equatable {
         return !self.sendReadMessages
             && !self.sendReadStories
             && !self.sendOnlinePresence
-            && !self.sendUploadProgress
-            && self.hideTypingActivity
-            && self.sendOfflineAfterOnline
     }
 
     public init(
@@ -532,7 +566,7 @@ public struct StuxnetSettings: Codable, Equatable {
         self.sendOfflineAfterOnline = try container.decodeIfPresent(Bool.self, forKey: .sendOfflineAfterOnline) ?? defaults.sendOfflineAfterOnline
         self.markReadAfterAction = try container.decodeIfPresent(Bool.self, forKey: .markReadAfterAction) ?? defaults.markReadAfterAction
         self.useScheduledMessagesInGhostMode = try container.decodeIfPresent(Bool.self, forKey: .useScheduledMessagesInGhostMode) ?? defaults.useScheduledMessagesInGhostMode
-        self.ghostSendDelaySeconds = try container.decodeIfPresent(Int32.self, forKey: .ghostSendDelaySeconds) ?? defaults.ghostSendDelaySeconds
+        self.ghostSendDelaySeconds = min(60, max(10, try container.decodeIfPresent(Int32.self, forKey: .ghostSendDelaySeconds) ?? defaults.ghostSendDelaySeconds))
         self.saveDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: .saveDeletedMessages) ?? defaults.saveDeletedMessages
         self.saveMessageHistory = try container.decodeIfPresent(Bool.self, forKey: .saveMessageHistory) ?? defaults.saveMessageHistory
         self.saveForBots = try container.decodeIfPresent(Bool.self, forKey: .saveForBots) ?? defaults.saveForBots
@@ -553,7 +587,8 @@ public struct StuxnetSettings: Codable, Equatable {
         self.voiceLabApplyToVoiceMessages = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToVoiceMessages) ?? defaults.voiceLabApplyToVoiceMessages
         self.voiceLabApplyToRoundVideos = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToRoundVideos) ?? defaults.voiceLabApplyToRoundVideos
         self.voiceLabApplyToCalls = try container.decodeIfPresent(Bool.self, forKey: .voiceLabApplyToCalls) ?? defaults.voiceLabApplyToCalls
-        self.deletedMessageLabel = try container.decodeIfPresent(String.self, forKey: .deletedMessageLabel) ?? defaults.deletedMessageLabel
+        let decodedDeletedMessageLabel = try container.decodeIfPresent(String.self, forKey: .deletedMessageLabel) ?? defaults.deletedMessageLabel
+        self.deletedMessageLabel = decodedDeletedMessageLabel == "Deleted" ? "⌫" : String(decodedDeletedMessageLabel.prefix(24))
         self.dimDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: .dimDeletedMessages) ?? defaults.dimDeletedMessages
         self.localProfileEffects = try container.decodeIfPresent(Bool.self, forKey: .localProfileEffects) ?? defaults.localProfileEffects
         self.hidePhoneNumberLocally = try container.decodeIfPresent(Bool.self, forKey: .hidePhoneNumberLocally) ?? defaults.hidePhoneNumberLocally
@@ -561,15 +596,15 @@ public struct StuxnetSettings: Codable, Equatable {
         self.hideChatListAvatars = try container.decodeIfPresent(Bool.self, forKey: .hideChatListAvatars) ?? defaults.hideChatListAvatars
         self.hideFastShareButton = try container.decodeIfPresent(Bool.self, forKey: .hideFastShareButton) ?? defaults.hideFastShareButton
         self.hideTypingActivity = try container.decodeIfPresent(Bool.self, forKey: .hideTypingActivity) ?? defaults.hideTypingActivity
-        self.customMessageBubbleRadius = try container.decodeIfPresent(Int32.self, forKey: .customMessageBubbleRadius)
+        self.customMessageBubbleRadius = try container.decodeIfPresent(Int32.self, forKey: .customMessageBubbleRadius).map { min(16, max(8, $0)) }
         self.removeMessageTails = try container.decodeIfPresent(Bool.self, forKey: .removeMessageTails) ?? defaults.removeMessageTails
         self.showMessageSeconds = try container.decodeIfPresent(Bool.self, forKey: .showMessageSeconds) ?? defaults.showMessageSeconds
         self.showMessageDate = try container.decodeIfPresent(Bool.self, forKey: .showMessageDate) ?? defaults.showMessageDate
         self.showChatListSeconds = try container.decodeIfPresent(Bool.self, forKey: .showChatListSeconds) ?? defaults.showChatListSeconds
         self.showChatListDate = try container.decodeIfPresent(Bool.self, forKey: .showChatListDate) ?? defaults.showChatListDate
         self.useEnglishMonthNames = try container.decodeIfPresent(Bool.self, forKey: .useEnglishMonthNames) ?? defaults.useEnglishMonthNames
-        self.localStarsBalance = try container.decodeIfPresent(Int64.self, forKey: .localStarsBalance) ?? defaults.localStarsBalance
-        self.localTonBalanceNano = try container.decodeIfPresent(Int64.self, forKey: .localTonBalanceNano) ?? defaults.localTonBalanceNano
+        self.localStarsBalance = max(0, try container.decodeIfPresent(Int64.self, forKey: .localStarsBalance) ?? defaults.localStarsBalance)
+        self.localTonBalanceNano = max(0, try container.decodeIfPresent(Int64.self, forKey: .localTonBalanceNano) ?? defaults.localTonBalanceNano)
         self.localGifts = try container.decodeIfPresent([StuxnetLocalGift].self, forKey: .localGifts) ?? defaults.localGifts
         self.lockedPeerIds = Array(Set(try container.decodeIfPresent([Int64].self, forKey: .lockedPeerIds) ?? defaults.lockedPeerIds)).sorted()
     }

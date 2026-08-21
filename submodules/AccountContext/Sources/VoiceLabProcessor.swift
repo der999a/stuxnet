@@ -116,14 +116,12 @@ public final class VoiceLabProcessor {
         return x * (27.0 + squared) / (27.0 + 9.0 * squared)
     }
 
+    @inline(__always)
     private func delayedSample(delay: Float) -> Float {
         var readPosition = Float(self.pitchWriteIndex) - delay
         let bufferCount = Float(self.pitchBuffer.count)
         if readPosition < 0.0 {
-            readPosition += bufferCount * ceilf(-readPosition / bufferCount)
-        }
-        if readPosition >= bufferCount {
-            readPosition -= bufferCount * floorf(readPosition / bufferCount)
+            readPosition += bufferCount
         }
         let lowerIndex = Int(readPosition)
         let upperIndex = (lowerIndex + 1) & (self.pitchBuffer.count - 1)
@@ -131,14 +129,9 @@ public final class VoiceLabProcessor {
         return self.pitchBuffer[lowerIndex] * (1.0 - fraction) + self.pitchBuffer[upperIndex] * fraction
     }
 
+    @inline(__always)
     private func processPitch(_ sample: Float) -> Float {
         self.pitchBuffer[self.pitchWriteIndex] = sample
-
-        if abs(self.pitchRatio - 1.0) < 0.001 && self.privacyAmount == 0.0 {
-            self.pitchWriteIndex = (self.pitchWriteIndex + 1) & (self.pitchBuffer.count - 1)
-            self.pitchSamplesWritten += 1
-            return sample
-        }
 
         var secondPhase = self.pitchPhase + 0.5
         if secondPhase >= 1.0 {
@@ -167,6 +160,7 @@ public final class VoiceLabProcessor {
         return sample * (1.0 - startup) + shifted * startup
     }
 
+    @inline(__always)
     private func processSample(_ input: Float) -> Float {
         var value = input.isFinite ? min(1.0, max(-1.0, input)) : 0.0
 
@@ -219,6 +213,18 @@ public final class VoiceLabProcessor {
         for _ in 0 ..< frameCount {
             let value = self.processSample(Float(samples[index]) / 32_768.0)
             samples[index] = Int16((value * 32_767.0).rounded())
+            index += stride
+        }
+    }
+
+    public func processInt32(samples: UnsafeMutablePointer<Int32>, frameCount: Int, stride: Int = 1) {
+        guard frameCount > 0, stride > 0 else {
+            return
+        }
+        var index = 0
+        for _ in 0 ..< frameCount {
+            let value = self.processSample(Float(samples[index]) / 2_147_483_648.0)
+            samples[index] = Int32((value * 2_147_483_520.0).rounded())
             index += stride
         }
     }
